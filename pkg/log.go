@@ -4,7 +4,7 @@ import (
 	"github.com/op/go-logging"
 )
 
-var Log = logging.MustGetLogger("email2db")
+var Log = logging.MustGetLogger("BedrockProxy")
 
 func init() {
 	format := logging.MustStringFormatter(
