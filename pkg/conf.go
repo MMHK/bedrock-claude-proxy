@@ -8,7 +8,7 @@ import (
 
 type Config struct {
 	HttpConfig
-	BedrockConfig *BedrockConfig
+	BedrockConfig *BedrockConfig `json:"bedrock_config,omitempty"`
 }
 
 func NewConfigFromLocal(filename string) (*Config, error) {
@@ -22,7 +22,7 @@ func (this *Config) MarginWithENV() {
 		this.WebRoot = os.Getenv("WEB_ROOT")
 	}
 	if len(this.Listen) <= 0 {
-		this.Listen = os.Getenv("HTTP_LIST")
+		this.Listen = os.Getenv("HTTP_LISTEN")
 	}
 	if this.BedrockConfig == nil {
 		this.BedrockConfig = LoadBedrockConfigWithEnv()
