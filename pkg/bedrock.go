@@ -1,6 +1,7 @@
 package pkg
 
 import (
+	"bedrock-claude-proxy/tests"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -17,9 +18,11 @@ import (
 )
 
 type BedrockConfig struct {
-	AccessKey string `json:"access_key"`
-	SecretKey string `json:"secret_key"`
-	Region    string `json:"region"`
+	AccessKey                string            `json:"access_key"`
+	SecretKey                string            `json:"secret_key"`
+	Region                   string            `json:"region"`
+	AnthropicVersionMappings map[string]string `json:"anthropic_version_mappings"`
+	ModelMappings            map[string]string `json:"model_mappings"`
 }
 
 func (this *BedrockConfig) GetInvokeEndpoint(modelId string) string {
@@ -30,11 +33,30 @@ func (this *BedrockConfig) GetInvokeStreamEndpoint(modelId string, region string
 	return fmt.Sprintf("bedrock-runtime.%s.amazonaws.com/model/%s/invoke-with-response-stream", region, modelId)
 }
 
+func ParseMappingsFromStr(raw string) map[string]string {
+	mappings := map[string]string{}
+	pairs := strings.Split(raw, ",")
+	// 遍历每个键值对
+	for _, pair := range pairs {
+		// 以等号分割键和值
+		kv := strings.Split(pair, "=")
+		if len(kv) == 2 {
+			key := strings.TrimSpace(kv[0])
+			value := strings.TrimSpace(kv[1])
+			mappings[key] = value
+		}
+	}
+
+	return mappings
+}
+
 func LoadBedrockConfigWithEnv() *BedrockConfig {
 	return &BedrockConfig{
 		AccessKey: os.Getenv("AWS_BEDROCK_ACCESS_KEY"),
 		SecretKey: os.Getenv("AWS_BEDROCK_SECRET_KEY"),
 		Region:    os.Getenv("AWS_BEDROCK_REGION"),
+		ModelMappings: ParseMappingsFromStr(os.Getenv("AWS_BEDROCK_MODEL_MAPPINGS")),
+		AnthropicVersionMappings: ParseMappingsFromStr(os.Getenv("AWS_BEDROCK_ANTHROPIC_VERSION_MAPPINGS")),
 	}
 }
 
@@ -55,17 +77,26 @@ type ClaudeTextCompletionRequest struct {
 }
 
 func (this *ClaudeTextCompletionRequest) UnmarshalJSON(data []byte) error {
+	type Alias ClaudeTextCompletionRequest
 	tmp := &struct {
+		*Alias
+
 		Stream bool   `json:"stream"`
 		Model  string `json:"model"`
 	}{
 		Stream: false,
+		Alias: (*Alias)(this),
 	}
-	if err := json.Unmarshal(data, tmp); err != nil {
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
 	}
+
 	this.Stream = tmp.Stream
 	this.Model = tmp.Model
+
+	Log.Debug("ClaudeTextCompletionRequest UnmarshalJSON")
+	Log.Debug(tests.ToJSON(tmp))
+	Log.Debugf("%+v", this)
 
 	return nil
 }
@@ -83,8 +114,76 @@ type ClaudeMessageCompletionRequestContent struct {
 }
 
 type ClaudeMessageCompletionRequestMessage struct {
-	Role    string `json:"role,omitempty"`
-	Content []*ClaudeMessageCompletionRequestContent `json:"content,omitempty"`
+	Role    string                                   `json:"role,omitempty"`
+	Content []*ClaudeMessageCompletionRequestContent `json:"-"`
+	Text    string                                   `json:"-"`
+}
+
+func (this *ClaudeMessageCompletionRequestMessage) UnmarshalJSON(data []byte) error {
+	// 定义一个临时的 map 来解码 JSON 数据
+	var tempMap map[string]interface{}
+	if err := json.Unmarshal(data, &tempMap); err != nil {
+		return err
+	}
+
+	if role, ok := tempMap["role"]; ok {
+		if roleStr, ok := role.(string); ok {
+			this.Role = roleStr
+		}
+	}
+
+
+	// 根据条件将 JSON 键映射到不同的字段
+	if value, ok := tempMap["content"]; ok {
+		switch v := value.(type) {
+		case string:
+			this.Text = v
+		case []interface{}:
+			tmp := make([]*ClaudeMessageCompletionRequestContent, len(v))
+			for _, item := range v {
+				if subMap, ok := item.(map[string]interface{}); ok {
+					row := &ClaudeMessageCompletionRequestContent{}
+					if _type, ok := subMap["type"].(string); ok {
+						row.Type = _type
+					}
+					if _text, ok := subMap["text"].(string); ok {
+						row.Text = _text
+					}
+					if _src, ok := subMap["source"].(*ClaudeMessageCompletionRequestContentSource); ok {
+						row.Source = _src
+					}
+					tmp = append(tmp, row)
+				}
+			}
+			this.Content = tmp
+		default:
+			return fmt.Errorf("unknown type for key")
+		}
+	}
+
+	return nil
+}
+
+func (this ClaudeMessageCompletionRequestMessage) MarshalJSON() ([]byte, error) {
+	type Alias ClaudeMessageCompletionRequestMessage
+
+	if len(this.Content) > 0 {
+		return json.Marshal(&struct {
+			Alias
+			Content interface{} `json:"content,omitempty"`
+		}{
+			Alias:   (Alias)(this),
+			Content: this.Content,
+		})
+	}
+
+	return json.Marshal(&struct {
+		Alias
+		Content interface{} `json:"content,omitempty"`
+	}{
+		Alias:   (Alias)(this),
+		Content: this.Text,
+	})
 }
 
 type ClaudeMessageCompletionRequestMetadata struct {
@@ -109,32 +208,46 @@ type ClaudeMessageCompletionRequestTools struct {
 }
 
 type ClaudeMessageCompletionRequest struct {
-	ClaudeTextCompletionRequest
-
-	AnthropicVersion string `json:"anthropic_version,omitempty"`
-	MaxToken         int    `json:"max_tokens,omitempty"`
-	System           string `json:"system,omitempty"`
+	Temperature      float64                                  `json:"temperature,omitempty"`
+	StopSequences    []string                                 `json:"stop_sequences,omitempty"`
+	TopP             float64                                  `json:"top_p,omitempty"`
+	TopK             int                                      `json:"top_k,omitempty"`
+	Stream           bool                                     `json:"-"`
+	Model            string                                   `json:"-"`
+	AnthropicVersion string                                   `json:"anthropic_version,omitempty"`
+	MaxToken         int                                      `json:"max_tokens,omitempty"`
+	System           string                                   `json:"system,omitempty"`
 	Messages         []*ClaudeMessageCompletionRequestMessage `json:"messages,omitempty"`
-	Metadata *ClaudeMessageCompletionRequestMetadata `json:"-"`
-	Tools []*ClaudeMessageCompletionRequestTools `json:"-"`
+	Metadata         *ClaudeMessageCompletionRequestMetadata  `json:"-"`
+	Tools            []*ClaudeMessageCompletionRequestTools   `json:"-"`
 }
 
 func (this *ClaudeMessageCompletionRequest) UnmarshalJSON(data []byte) error {
+	type Alias ClaudeMessageCompletionRequest
 	tmp := &struct {
-		Stream   bool   `json:"stream"`
-		Model    string `json:"model"`
+		*Alias
+
+		Stream   bool                                    `json:"stream"`
+		Model    string                                  `json:"model"`
 		Metadata *ClaudeMessageCompletionRequestMetadata `json:"metadata"`
-		Tools []*ClaudeMessageCompletionRequestTools `json:"tools"`
+		Tools    []*ClaudeMessageCompletionRequestTools  `json:"tools"`
 	}{
 		Stream: false,
+		Alias: (*Alias)(this),
 	}
-	if err := json.Unmarshal(data, tmp); err != nil {
+
+	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
 	}
-	this.Stream = tmp.Stream
-	this.Model = tmp.Model
+
 	this.Metadata = tmp.Metadata
 	this.Tools = tmp.Tools
+	this.Stream = tmp.Stream
+	this.Model = tmp.Model
+
+	Log.Debug("ClaudeMessageCompletionRequest UnmarshalJSON")
+	Log.Debug(tests.ToJSON(tmp))
+	Log.Debugf("%+v", this)
 
 	return nil
 }
@@ -208,6 +321,7 @@ type ClaudeMessageCompletionStreamEvent struct {
 	Index        int                        `json:"index,omitempty"`
 	ContentBlock *ClaudeMessageContentBlock `json:"content_block,omitempty"`
 	Delta        *ClaudeMessageDelta        `json:"delta,omitempty"`
+	Raw          []byte 					`json:"-"`
 }
 
 type CompleteTextResponse struct {
@@ -274,9 +388,8 @@ func (this *MessageCompleteResponse) GetEvents() <-chan *ClaudeMessageCompletion
 	return this.Events
 }
 
-
 func ClaudeTextCompletionStreamEventToSSE(event string, data string) string {
-	return fmt.Sprintf("event: %s\ndata: %s\n", event, data)
+	return fmt.Sprintf("event: %s\ndata: %s\n\n", event, data)
 }
 
 type ClaudeTextCompletionStreamEventList []*ClaudeTextCompletionStreamEvent
@@ -307,6 +420,10 @@ func NewBedrockClient(config *BedrockConfig) *BedrockClient {
 
 func (this *BedrockClient) CompleteText(req *ClaudeTextCompletionRequest) (*CompleteTextResponse, error) {
 	modelId := req.Model
+	mappedModel, exist := this.config.ModelMappings[modelId]
+	if exist {
+		modelId = mappedModel
+	}
 
 	if !strings.HasSuffix(req.Prompt, "Assistant:") {
 		req.Prompt = fmt.Sprintf("\n\nHuman: %s\n\nAssistant:", req.Prompt)
@@ -331,7 +448,7 @@ func (this *BedrockClient) CompleteText(req *ClaudeTextCompletionRequest) (*Comp
 		//Log.Debugf("Request: %+v", output)
 
 		reader := output.GetStream()
-		eventQueue := make(chan *ClaudeTextCompletionStreamEvent, 0)
+		eventQueue := make(chan *ClaudeTextCompletionStreamEvent, 10)
 
 		go func() {
 			defer reader.Close()
@@ -391,6 +508,11 @@ func (this *BedrockClient) CompleteText(req *ClaudeTextCompletionRequest) (*Comp
 
 func (this *BedrockClient) MessageCompletion(req *ClaudeMessageCompletionRequest) (*MessageCompleteResponse, error) {
 	modelId := req.Model
+	mappedModel, exist := this.config.ModelMappings[modelId]
+	if exist {
+		modelId = mappedModel
+	}
+
 	body, err := json.Marshal(req)
 	if err != nil {
 		Log.Errorf("Couldn't marshal the request: ", err)
@@ -412,7 +534,7 @@ func (this *BedrockClient) MessageCompletion(req *ClaudeMessageCompletionRequest
 
 
 		reader := output.GetStream()
-		eventQueue := make(chan *ClaudeMessageCompletionStreamEvent, 0)
+		eventQueue := make(chan *ClaudeMessageCompletionStreamEvent, 10)
 
 		go func() {
 			defer reader.Close()
@@ -430,6 +552,7 @@ func (this *BedrockClient) MessageCompletion(req *ClaudeMessageCompletionRequest
 						Log.Error(err)
 						continue
 					}
+					resp.Raw = v.Value.Bytes
 					eventQueue <- &resp
 
 				case *types.UnknownUnionMember:

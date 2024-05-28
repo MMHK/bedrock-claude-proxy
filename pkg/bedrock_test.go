@@ -31,9 +31,14 @@ func TestBedrockClient_CompleteTextWithStream(t *testing.T) {
 	}
 
 	if resp.IsStream() {
+		buffer := ""
 		for event := range resp.GetEvents() {
-			t.Logf("%+v", event)
+			t.Log(tests.ToJSON(event))
+			if event.Type == "completion" {
+				buffer += event.Completion
+			}
 		}
+		t.Log(buffer)
 	} else {
 		t.Logf("%+v", resp.GetResponse())
 	}
@@ -78,11 +83,9 @@ func TestBedrockClient_MessageCompletionWithoutStream(t *testing.T) {
 	prompt := "創作一首7言律詩"
 
 	resp, err := client.MessageCompletion(&ClaudeMessageCompletionRequest {
-		ClaudeTextCompletionRequest: ClaudeTextCompletionRequest {
-			Temperature: 0.5,
-			Stream: false,
-			Model: "anthropic.claude-v2:1",
-		},
+		Temperature: 0.5,
+		Stream: false,
+		Model: "anthropic.claude-v2:1",
 		MaxToken: 2048,
 		System: "You are a helpful assistant.",
 		AnthropicVersion: "bedrock-2023-05-31",
@@ -123,11 +126,9 @@ func TestBedrockClient_MessageCompletionWithStream(t *testing.T) {
 	prompt := "創作一首7言律詩"
 
 	resp, err := client.MessageCompletion(&ClaudeMessageCompletionRequest {
-		ClaudeTextCompletionRequest: ClaudeTextCompletionRequest {
-			Temperature: 0.5,
-			Stream: true,
-			Model: "anthropic.claude-v2:1",
-		},
+		Temperature: 0.5,
+		Stream: true,
+		Model: "anthropic.claude-v2:1",
 		MaxToken: 2048,
 		System: "You are a helpful assistant.",
 		AnthropicVersion: "bedrock-2023-05-31",
@@ -151,9 +152,14 @@ func TestBedrockClient_MessageCompletionWithStream(t *testing.T) {
 	}
 
 	if resp.IsStream() {
+		buffer := ""
 		for event := range resp.GetEvents() {
 			t.Log(tests.ToJSON(event))
+			if event.Type == "content_block_delta" {
+				buffer += event.Delta.Text
+			}
 		}
+		t.Log(buffer)
 	} else {
 		t.Log(tests.ToJSON(resp.GetResponse()))
 	}
