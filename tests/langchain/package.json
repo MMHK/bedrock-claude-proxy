@@ -1,0 +1,23 @@
+{
+  "name": "langchain-api-tests",
+  "version": "1.0.0",
+  "description": "Tests for Anthyropic Message API and Text Completion API using Jest",
+  "main": "index.js",
+  "scripts": {
+    "test": "jest",
+    "test:anthropic:normal": "jest --testNamePattern normal",
+    "test:anthropic:stream": "jest --testNamePattern stream"
+  },
+  "author": "Sam",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@babel/preset-env": "^7.24.6",
+    "babel-jest": "^29.7.0",
+    "jest": "^29.0.0"
+  },
+  "dependencies": {
+    "@langchain/anthropic": "^0.1.21",
+    "dotenv": "^16.4.5",
+    "langchain": "^0.2.3"
+  }
+}

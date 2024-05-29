@@ -22,3 +22,6 @@ go.work
 /.idea
 /*.env
 /vendor
+/tests/langchain/node_modules
+/tests/langchain/.env
+/tests/langchain/.yarn

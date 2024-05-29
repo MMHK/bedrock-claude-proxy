@@ -11,6 +11,7 @@ import (
 type HttpConfig struct {
 	Listen  string `json:"listen,omitempty"`
 	WebRoot string `json:"web_root,omitempty"`
+	APIKey  string `json:"api_key,omitempty"`
 }
 
 type HTTPService struct {
@@ -66,6 +67,27 @@ func (this *HTTPService) ResponseJSON(source interface{}, writer http.ResponseWr
 	}
 }
 
+func (this *HTTPService) ResponseSSE(writer http.ResponseWriter, queue <-chan ISSEDecoder) {
+	// output & flush SSE
+	flusher, ok := writer.(http.Flusher)
+	if !ok {
+		this.ResponseError(fmt.Errorf("streaming not supported"), writer)
+		return
+	}
+	writer.Header().Set("Content-Type", "text/event-stream")
+	writer.Header().Set("Cache-Control", "no-cache")
+	writer.Header().Set("Connection", "keep-alive")
+
+	for event := range queue {
+		_, err := writer.Write(NewSSERaw(event))
+		if err != nil {
+			Log.Error(err)
+			continue
+		}
+		flusher.Flush()
+	}
+}
+
 func (this *HTTPService) HandleComplete(writer http.ResponseWriter, request *http.Request) {
 	if request.Method != "POST" {
 		this.ResponseError(fmt.Errorf("method not allowed"), writer)
@@ -107,7 +129,7 @@ func (this *HTTPService) HandleComplete(writer http.ResponseWriter, request *htt
 
 
 		for event := range response.GetEvents() {
-			_, err = writer.Write([]byte(ClaudeTextCompletionStreamEventToSSE(event.Type, event.Completion)))
+			_, err = writer.Write(NewSSERaw(event))
 			if err != nil {
 				Log.Error(err)
 				continue
@@ -147,13 +169,14 @@ func (this *HTTPService) HandleMessageComplete(writer http.ResponseWriter, reque
 		return
 	}
 	// get anthropic-version,x-api-key from request
-	//anthropicVersion := request.Header.Get("anthropic-version")
+	anthropicVersion := request.Header.Get("anthropic-version")
+	if len(anthropicVersion) > 0 {
+		req.AnthropicVersion = anthropicVersion
+	}
 	//anthropicKey := request.Header.Get("x-api-key")
 
-	req.AnthropicVersion = "bedrock-2023-05-31"
-
 	Log.Debug(string(body))
-	Log.Debugf("%+v", req)
+	//Log.Debugf("%+v", req)
 
 	bedrockClient := NewBedrockClient(this.conf.BedrockConfig)
 	response, err := bedrockClient.MessageCompletion(&req)
@@ -164,41 +187,57 @@ func (this *HTTPService) HandleMessageComplete(writer http.ResponseWriter, reque
 
 	if response.IsStream() {
 		// output & flush SSE
-		flusher, ok := writer.(http.Flusher)
-		if !ok {
-			this.ResponseError(fmt.Errorf("streaming not supported"), writer)
-			return
-		}
-		writer.Header().Set("Content-Type", "text/event-stream")
-		writer.Header().Set("Cache-Control", "no-cache")
-		writer.Header().Set("Connection", "keep-alive")
-
-		for event := range response.GetEvents() {
-			_, err = writer.Write([]byte(ClaudeTextCompletionStreamEventToSSE(event.Type, string(event.Raw))))
-			if err != nil {
-				Log.Error(err)
-				continue
-			}
-			flusher.Flush()
-		}
+		this.ResponseSSE(writer, response.GetEvents())
 		return
 	}
 
 	this.ResponseJSON(response.GetResponse(), writer)
 }
 
+// APIKeyMiddleware 验证 API Key 的中间件
+func (this *HTTPService) APIKeyMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		Log.Debug("APIKeyMiddleware")
+		APIKey := this.conf.APIKey
+		Log.Debugf("APIKeyMiddleware: %s", APIKey)
+		if APIKey == "" {
+			next.ServeHTTP(writer, request)
+			return
+		}
+		apiKey := request.Header.Get("x-api-key")
+		Log.Debugf("API key in header: %s", apiKey)
+		if apiKey == "" {
+			this.ResponseError(fmt.Errorf("invalid api key"), writer)
+			return
+		}
+
+		// 这里可以添加更多的 API Key 验证逻辑
+		if apiKey != APIKey {
+			this.ResponseError(fmt.Errorf("Invalid API key"), writer)
+			return
+		}
+
+		next.ServeHTTP(writer, request)
+	})
+}
+
 func (this *HTTPService) Start() {
 	rHandler := mux.NewRouter()
 
-	rHandler.HandleFunc("/v1/complete", this.HandleComplete)
-	rHandler.HandleFunc("/v1/messages", this.HandleMessageComplete)
+	// 需要 API Key 的路由
+	apiRouter := rHandler.PathPrefix("/v1").Subrouter()
+	apiRouter.Use(this.APIKeyMiddleware)
+
+	apiRouter.HandleFunc("/complete", this.HandleComplete)
+	apiRouter.HandleFunc("/messages", this.HandleMessageComplete)
+
 	rHandler.HandleFunc("/", this.RedirectSwagger)
 	rHandler.PathPrefix("/").Handler(http.StripPrefix("/",
 		http.FileServer(http.Dir(fmt.Sprintf("%s", this.conf.WebRoot)))))
 	rHandler.NotFoundHandler = http.HandlerFunc(this.NotFoundHandle)
 
 	Log.Info("http service starting")
-	Log.Infof("Please open http://%this\n", this.conf.Listen)
+	Log.Infof("Please open http://%s\n", this.conf.Listen)
 	err := http.ListenAndServe(this.conf.Listen, rHandler)
 	if err != nil {
 		Log.Error(err)

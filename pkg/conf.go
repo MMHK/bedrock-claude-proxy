@@ -24,6 +24,9 @@ func (this *Config) MarginWithENV() {
 	if len(this.Listen) <= 0 {
 		this.Listen = os.Getenv("HTTP_LISTEN")
 	}
+	if len(this.APIKey) <= 0 {
+		this.APIKey = os.Getenv("API_KEY")
+	}
 	if this.BedrockConfig == nil {
 		this.BedrockConfig = LoadBedrockConfigWithEnv()
 	}

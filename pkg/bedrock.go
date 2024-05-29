@@ -1,7 +1,6 @@
 package pkg
 
 import (
-	"bedrock-claude-proxy/tests"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -23,6 +22,8 @@ type BedrockConfig struct {
 	Region                   string            `json:"region"`
 	AnthropicVersionMappings map[string]string `json:"anthropic_version_mappings"`
 	ModelMappings            map[string]string `json:"model_mappings"`
+	AnthropicDefaultModel    string            `json:"anthropic_default_model"`
+	AnthropicDefaultVersion  string            `json:"anthropic_default_version"`
 }
 
 func (this *BedrockConfig) GetInvokeEndpoint(modelId string) string {
@@ -57,6 +58,8 @@ func LoadBedrockConfigWithEnv() *BedrockConfig {
 		Region:    os.Getenv("AWS_BEDROCK_REGION"),
 		ModelMappings: ParseMappingsFromStr(os.Getenv("AWS_BEDROCK_MODEL_MAPPINGS")),
 		AnthropicVersionMappings: ParseMappingsFromStr(os.Getenv("AWS_BEDROCK_ANTHROPIC_VERSION_MAPPINGS")),
+		AnthropicDefaultModel:    os.Getenv("AWS_BEDROCK_ANTHROPIC_DEFAULT_MODEL"),
+		AnthropicDefaultVersion:  os.Getenv("AWS_BEDROCK_ANTHROPIC_DEFAULT_VERSION"),
 	}
 }
 
@@ -94,9 +97,9 @@ func (this *ClaudeTextCompletionRequest) UnmarshalJSON(data []byte) error {
 	this.Stream = tmp.Stream
 	this.Model = tmp.Model
 
-	Log.Debug("ClaudeTextCompletionRequest UnmarshalJSON")
-	Log.Debug(tests.ToJSON(tmp))
-	Log.Debugf("%+v", this)
+	//Log.Debug("ClaudeTextCompletionRequest UnmarshalJSON")
+	//Log.Debug(tests.ToJSON(tmp))
+	//Log.Debugf("%+v", this)
 
 	return nil
 }
@@ -245,9 +248,9 @@ func (this *ClaudeMessageCompletionRequest) UnmarshalJSON(data []byte) error {
 	this.Stream = tmp.Stream
 	this.Model = tmp.Model
 
-	Log.Debug("ClaudeMessageCompletionRequest UnmarshalJSON")
-	Log.Debug(tests.ToJSON(tmp))
-	Log.Debugf("%+v", this)
+	//Log.Debug("ClaudeMessageCompletionRequest UnmarshalJSON")
+	//Log.Debug(tests.ToJSON(tmp))
+	//Log.Debugf("%+v", this)
 
 	return nil
 }
@@ -271,11 +274,30 @@ type ClaudeMessageCompletionResponse struct {
 	Usage        *ClaudeMessageUsage          `json:"usage,omitempty"`
 }
 
+type ISSEDecoder interface {
+	GetBytes() []byte
+	GetEvent() string
+	GetText() string
+}
+
 type ClaudeTextCompletionStreamEvent struct {
 	Type       string `json:"type,omitempty"`
 	StopReason string `json:"stop_reason,omitempty"`
 	Model      string `json:"model,omitempty"`
 	Completion string `json:"completion,omitempty"`
+	Raw        []byte `json:"-"`
+}
+
+func (this *ClaudeTextCompletionStreamEvent) GetBytes() []byte {
+	return this.Raw
+}
+
+func (this *ClaudeTextCompletionStreamEvent) GetEvent() string {
+	return this.Type
+}
+
+func (this *ClaudeTextCompletionStreamEvent) GetText() string {
+	return this.Completion
 }
 
 type ClaudeMessageUsage struct {
@@ -324,17 +346,38 @@ type ClaudeMessageCompletionStreamEvent struct {
 	Raw          []byte 					`json:"-"`
 }
 
+func (this *ClaudeMessageCompletionStreamEvent) GetBytes() []byte {
+	return this.Raw
+}
+
+func (this *ClaudeMessageCompletionStreamEvent) GetEvent() string {
+	return this.Type
+}
+
+func (this *ClaudeMessageCompletionStreamEvent) GetText() string {
+	if this.Delta != nil {
+		return this.Delta.Text
+	}
+	return this.Completion
+}
+
 type CompleteTextResponse struct {
 	stream   bool
 	Response *ClaudeTextCompletionResponse
-	Events   <-chan *ClaudeTextCompletionStreamEvent
+	Events   <-chan ISSEDecoder
 }
 
-func NewStreamCompleteTextResponse(queue <-chan *ClaudeTextCompletionStreamEvent) *CompleteTextResponse {
+func NewStreamCompleteTextResponse(queue <-chan ISSEDecoder) *CompleteTextResponse {
 	return &CompleteTextResponse{
 		stream: true,
 		Events: queue,
 	}
+}
+
+type IStreamableResponse interface {
+	IsStream() bool
+	GetResponse() interface{}
+	GetEvents() <-chan ISSEDecoder
 }
 
 func NewCompleteTextResponse(response *ClaudeTextCompletionResponse) *CompleteTextResponse {
@@ -348,21 +391,21 @@ func (this *CompleteTextResponse) IsStream() bool {
 	return this.stream
 }
 
-func (this *CompleteTextResponse) GetResponse() *ClaudeTextCompletionResponse {
+func (this *CompleteTextResponse) GetResponse() interface{} {
 	return this.Response
 }
 
-func (this *CompleteTextResponse) GetEvents() <-chan *ClaudeTextCompletionStreamEvent {
+func (this *CompleteTextResponse) GetEvents() <-chan ISSEDecoder {
 	return this.Events
 }
 
 type MessageCompleteResponse struct {
 	stream   bool
 	Response *ClaudeMessageCompletionResponse
-	Events   <-chan *ClaudeMessageCompletionStreamEvent
+	Events   <-chan ISSEDecoder
 }
 
-func NewStreamMessageCompleteResponse(queue <-chan *ClaudeMessageCompletionStreamEvent) *MessageCompleteResponse {
+func NewStreamMessageCompleteResponse(queue <-chan ISSEDecoder) *MessageCompleteResponse {
 	return &MessageCompleteResponse{
 		stream: true,
 		Events: queue,
@@ -380,16 +423,16 @@ func (this *MessageCompleteResponse) IsStream() bool {
 	return this.stream
 }
 
-func (this *MessageCompleteResponse) GetResponse() *ClaudeMessageCompletionResponse {
+func (this *MessageCompleteResponse) GetResponse() interface{} {
 	return this.Response
 }
 
-func (this *MessageCompleteResponse) GetEvents() <-chan *ClaudeMessageCompletionStreamEvent {
+func (this *MessageCompleteResponse) GetEvents() <-chan ISSEDecoder {
 	return this.Events
 }
 
-func ClaudeTextCompletionStreamEventToSSE(event string, data string) string {
-	return fmt.Sprintf("event: %s\ndata: %s\n\n", event, data)
+func NewSSERaw(encoder ISSEDecoder) []byte {
+	return []byte(fmt.Sprintf("event: %s\ndata: %s\n\n", encoder.GetEvent(), string(encoder.GetBytes())))
 }
 
 type ClaudeTextCompletionStreamEventList []*ClaudeTextCompletionStreamEvent
@@ -418,11 +461,14 @@ func NewBedrockClient(config *BedrockConfig) *BedrockClient {
 	}
 }
 
-func (this *BedrockClient) CompleteText(req *ClaudeTextCompletionRequest) (*CompleteTextResponse, error) {
+func (this *BedrockClient) CompleteText(req *ClaudeTextCompletionRequest) (IStreamableResponse, error) {
 	modelId := req.Model
 	mappedModel, exist := this.config.ModelMappings[modelId]
 	if exist {
 		modelId = mappedModel
+	}
+	if len(modelId) == 0 {
+		modelId = this.config.AnthropicDefaultModel
 	}
 
 	if !strings.HasSuffix(req.Prompt, "Assistant:") {
@@ -448,7 +494,7 @@ func (this *BedrockClient) CompleteText(req *ClaudeTextCompletionRequest) (*Comp
 		//Log.Debugf("Request: %+v", output)
 
 		reader := output.GetStream()
-		eventQueue := make(chan *ClaudeTextCompletionStreamEvent, 10)
+		eventQueue := make(chan ISSEDecoder, 10)
 
 		go func() {
 			defer reader.Close()
@@ -466,6 +512,7 @@ func (this *BedrockClient) CompleteText(req *ClaudeTextCompletionRequest) (*Comp
 						Log.Error(err)
 						continue
 					}
+					resp.Raw = v.Value.Bytes
 					eventQueue <- &resp
 
 				case *types.UnknownUnionMember:
@@ -506,11 +553,21 @@ func (this *BedrockClient) CompleteText(req *ClaudeTextCompletionRequest) (*Comp
 	return nil, nil
 }
 
-func (this *BedrockClient) MessageCompletion(req *ClaudeMessageCompletionRequest) (*MessageCompleteResponse, error) {
+func (this *BedrockClient) MessageCompletion(req *ClaudeMessageCompletionRequest) (IStreamableResponse, error) {
 	modelId := req.Model
 	mappedModel, exist := this.config.ModelMappings[modelId]
 	if exist {
 		modelId = mappedModel
+	}
+	if len(modelId) == 0 {
+		modelId = this.config.AnthropicDefaultModel
+	}
+	apiVersion, exist := this.config.AnthropicVersionMappings[req.AnthropicVersion]
+	if exist {
+		req.AnthropicVersion = apiVersion
+	}
+	if len(req.AnthropicVersion) == 0 {
+		req.AnthropicVersion = this.config.AnthropicDefaultVersion
 	}
 
 	body, err := json.Marshal(req)
@@ -534,7 +591,7 @@ func (this *BedrockClient) MessageCompletion(req *ClaudeMessageCompletionRequest
 
 
 		reader := output.GetStream()
-		eventQueue := make(chan *ClaudeMessageCompletionStreamEvent, 10)
+		eventQueue := make(chan ISSEDecoder, 10)
 
 		go func() {
 			defer reader.Close()

@@ -1,0 +1,6 @@
+vendor
+tests
+.git
+.idea
+.env
+.env.example

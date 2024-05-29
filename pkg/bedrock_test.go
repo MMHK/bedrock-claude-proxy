@@ -34,8 +34,8 @@ func TestBedrockClient_CompleteTextWithStream(t *testing.T) {
 		buffer := ""
 		for event := range resp.GetEvents() {
 			t.Log(tests.ToJSON(event))
-			if event.Type == "completion" {
-				buffer += event.Completion
+			if event.GetEvent() == "completion" {
+				buffer += event.GetText()
 			}
 		}
 		t.Log(buffer)
@@ -155,8 +155,8 @@ func TestBedrockClient_MessageCompletionWithStream(t *testing.T) {
 		buffer := ""
 		for event := range resp.GetEvents() {
 			t.Log(tests.ToJSON(event))
-			if event.Type == "content_block_delta" {
-				buffer += event.Delta.Text
+			if event.GetEvent() == "content_block_delta" {
+				buffer += event.GetText()
 			}
 		}
 		t.Log(buffer)
