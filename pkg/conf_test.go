@@ -1,8 +1,8 @@
 package pkg
 
 import (
-	"bytes"
 	"bedrock-claude-proxy/tests"
+	"bytes"
 	"encoding/json"
 	"testing"
 )
@@ -36,7 +36,6 @@ func TestConfig_MarginWithENV(t *testing.T) {
 	}
 
 	conf.MarginWithENV()
-
 
 	t.Logf("%+v", conf)
 	jsonBin, err := json.Marshal(conf)

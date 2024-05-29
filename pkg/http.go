@@ -127,7 +127,6 @@ func (this *HTTPService) HandleComplete(writer http.ResponseWriter, request *htt
 		writer.Header().Set("Cache-Control", "no-cache")
 		writer.Header().Set("Connection", "keep-alive")
 
-
 		for event := range response.GetEvents() {
 			_, err = writer.Write(NewSSERaw(event))
 			if err != nil {
@@ -159,7 +158,6 @@ func (this *HTTPService) HandleMessageComplete(writer http.ResponseWriter, reque
 		return
 	}
 	defer request.Body.Close()
-
 
 	// json decode request body
 	var req ClaudeMessageCompletionRequest

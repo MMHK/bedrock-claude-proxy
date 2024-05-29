@@ -9,8 +9,8 @@ import (
 	"runtime"
 )
 
-//preload config in testing
-func init()  {
+// preload config in testing
+func init() {
 	format := logging.MustStringFormatter(
 		`Email2DB %{color} %{shortfunc} %{level:.4s} %{shortfile}
 %{id:03x}%{color:reset} %{message}`,
@@ -29,7 +29,7 @@ func GetLocalPath(file string) string {
 	return filepath.Join(filepath.Dir(filename), file)
 }
 
-func ToJSON(target interface{}) (string) {
+func ToJSON(target interface{}) string {
 	str := new(bytes.Buffer)
 	encoder := json.NewEncoder(str)
 	encoder.SetEscapeHTML(false)

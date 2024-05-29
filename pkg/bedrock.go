@@ -53,10 +53,10 @@ func ParseMappingsFromStr(raw string) map[string]string {
 
 func LoadBedrockConfigWithEnv() *BedrockConfig {
 	return &BedrockConfig{
-		AccessKey: os.Getenv("AWS_BEDROCK_ACCESS_KEY"),
-		SecretKey: os.Getenv("AWS_BEDROCK_SECRET_KEY"),
-		Region:    os.Getenv("AWS_BEDROCK_REGION"),
-		ModelMappings: ParseMappingsFromStr(os.Getenv("AWS_BEDROCK_MODEL_MAPPINGS")),
+		AccessKey:                os.Getenv("AWS_BEDROCK_ACCESS_KEY"),
+		SecretKey:                os.Getenv("AWS_BEDROCK_SECRET_KEY"),
+		Region:                   os.Getenv("AWS_BEDROCK_REGION"),
+		ModelMappings:            ParseMappingsFromStr(os.Getenv("AWS_BEDROCK_MODEL_MAPPINGS")),
 		AnthropicVersionMappings: ParseMappingsFromStr(os.Getenv("AWS_BEDROCK_ANTHROPIC_VERSION_MAPPINGS")),
 		AnthropicDefaultModel:    os.Getenv("AWS_BEDROCK_ANTHROPIC_DEFAULT_MODEL"),
 		AnthropicDefaultVersion:  os.Getenv("AWS_BEDROCK_ANTHROPIC_DEFAULT_VERSION"),
@@ -88,7 +88,7 @@ func (this *ClaudeTextCompletionRequest) UnmarshalJSON(data []byte) error {
 		Model  string `json:"model"`
 	}{
 		Stream: false,
-		Alias: (*Alias)(this),
+		Alias:  (*Alias)(this),
 	}
 	if err := json.Unmarshal(data, &tmp); err != nil {
 		return err
@@ -111,8 +111,8 @@ type ClaudeMessageCompletionRequestContentSource struct {
 }
 
 type ClaudeMessageCompletionRequestContent struct {
-	Type   string `json:"type,omitempty"`
-	Text   string `json:"text,omitempty"`
+	Type   string                                       `json:"type,omitempty"`
+	Text   string                                       `json:"text,omitempty"`
 	Source *ClaudeMessageCompletionRequestContentSource `json:"source,omitempty"`
 }
 
@@ -134,7 +134,6 @@ func (this *ClaudeMessageCompletionRequestMessage) UnmarshalJSON(data []byte) er
 			this.Role = roleStr
 		}
 	}
-
 
 	// 根据条件将 JSON 键映射到不同的字段
 	if value, ok := tempMap["content"]; ok {
@@ -194,9 +193,9 @@ type ClaudeMessageCompletionRequestMetadata struct {
 }
 
 type ClaudeMessageCompletionRequestInputSchema struct {
-	Type       string `json:"type,omitempty"`
+	Type       string                                                   `json:"type,omitempty"`
 	Properties map[string]*ClaudeMessageCompletionRequestPropertiesItem `json:"properties,omitempty"`
-	Required []string `json:"required,omitempty"`
+	Required   []string                                                 `json:"required,omitempty"`
 }
 
 type ClaudeMessageCompletionRequestPropertiesItem struct {
@@ -205,8 +204,8 @@ type ClaudeMessageCompletionRequestPropertiesItem struct {
 }
 
 type ClaudeMessageCompletionRequestTools struct {
-	Name        string `json:"name,omitempty"`
-	Description string `json:"description,omitempty"`
+	Name        string                                     `json:"name,omitempty"`
+	Description string                                     `json:"description,omitempty"`
 	InputSchema *ClaudeMessageCompletionRequestInputSchema `json:"input_schema,omitempty"`
 }
 
@@ -236,7 +235,7 @@ func (this *ClaudeMessageCompletionRequest) UnmarshalJSON(data []byte) error {
 		Tools    []*ClaudeMessageCompletionRequestTools  `json:"tools"`
 	}{
 		Stream: false,
-		Alias: (*Alias)(this),
+		Alias:  (*Alias)(this),
 	}
 
 	if err := json.Unmarshal(data, &tmp); err != nil {
@@ -266,12 +265,12 @@ type ClaudeTextCompletionResponse struct {
 type ClaudeMessageCompletionResponse struct {
 	ClaudeMessageStop
 
-	Id           string                       `json:"id,omitempty"`
-	Model        string                       `json:"model,omitempty"`
-	Type         string                       `json:"type,omitempty"`
-	Role         string                       `json:"role,omitempty"`
-	Content      []*ClaudeMessageContentBlock `json:"content,omitempty"`
-	Usage        *ClaudeMessageUsage          `json:"usage,omitempty"`
+	Id      string                       `json:"id,omitempty"`
+	Model   string                       `json:"model,omitempty"`
+	Type    string                       `json:"type,omitempty"`
+	Role    string                       `json:"role,omitempty"`
+	Content []*ClaudeMessageContentBlock `json:"content,omitempty"`
+	Usage   *ClaudeMessageUsage          `json:"usage,omitempty"`
 }
 
 type ISSEDecoder interface {
@@ -329,9 +328,9 @@ type ClaudeMessageContentBlock struct {
 type ClaudeMessageDelta struct {
 	ClaudeMessageStop
 
-	Type         string `json:"type,omitempty"`
-	Text         string `json:"text,omitempty"`
-	PartialJson  string `json:"partial_json,omitempty"`
+	Type        string `json:"type,omitempty"`
+	Text        string `json:"text,omitempty"`
+	PartialJson string `json:"partial_json,omitempty"`
 }
 
 type ClaudeMessageCompletionStreamEvent struct {
@@ -343,7 +342,7 @@ type ClaudeMessageCompletionStreamEvent struct {
 	Index        int                        `json:"index,omitempty"`
 	ContentBlock *ClaudeMessageContentBlock `json:"content_block,omitempty"`
 	Delta        *ClaudeMessageDelta        `json:"delta,omitempty"`
-	Raw          []byte 					`json:"-"`
+	Raw          []byte                     `json:"-"`
 }
 
 func (this *ClaudeMessageCompletionStreamEvent) GetBytes() []byte {
@@ -588,7 +587,6 @@ func (this *BedrockClient) MessageCompletion(req *ClaudeMessageCompletionRequest
 			Log.Error(err)
 			return nil, err
 		}
-
 
 		reader := output.GetStream()
 		eventQueue := make(chan ISSEDecoder, 10)
