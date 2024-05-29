@@ -1,0 +1,26 @@
+version: '3'
+services:
+  bedrock-claude-proxy:
+    image: "mmhk/bedrock-claude-proxy"
+    restart: always
+    environment:
+      API_KEY: "your-api-key"
+      AWS_BEDROCK_ACCESS_KEY: "your-bedrock-access-key"
+      AWS_BEDROCK_SECRET_KEY: "your-bedrock-secret-key"
+      AWS_BEDROCK_REGION: "your-bedrock-region"
+    ports:
+      - "3000:3000"
+  chatgpt-next:
+    image: "yidadaa/chatgpt-next-web"
+    restart: always
+    environment:
+      DEFAULT_MODEL: "claude-2.1"
+      DISABLE_GPT4: 1
+      HIDE_USER_API_KEY: 1
+      DISABLE_FAST_LINK: 1
+      ANTHROPIC_URL: "http://bedrock-claude-proxy:3000"
+      ANTHROPIC_API_KEY: "your-api-key"
+      ANTHROPIC_API_VERSION: "2023-06-01"
+      CUSTOM_MODELS: "-all,+claude-2.1=claude-2.1(AWS bedrock),+claude-3-sonnet-20240229=claude-3-sonnet(AWS bedrock)"
+    ports:
+      - "4001:3000"
