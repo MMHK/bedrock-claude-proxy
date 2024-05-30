@@ -6,7 +6,8 @@
   "scripts": {
     "test": "jest",
     "test:anthropic:normal": "jest --testNamePattern normal",
-    "test:anthropic:stream": "jest --testNamePattern stream"
+    "test:anthropic:stream": "jest --testNamePattern stream",
+    "test:anthropic:image": "jest --testNamePattern image"
   },
   "author": "Sam",
   "license": "Apache-2.0",

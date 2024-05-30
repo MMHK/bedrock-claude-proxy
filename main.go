@@ -12,9 +12,15 @@ func main() {
 
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
-	conf, err := pkg.NewConfigFromLocal(*conf_path)
-	if err != nil {
-		pkg.Log.Error(err)
+	var conf *pkg.Config
+	var err error
+	if len(*conf_path) > 0 {
+		conf, err = pkg.NewConfigFromLocal(*conf_path)
+		if err != nil {
+			pkg.Log.Error(err)
+			conf = &pkg.Config{}
+		}
+	} else {
 		conf = &pkg.Config{}
 	}
 

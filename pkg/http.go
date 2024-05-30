@@ -174,7 +174,9 @@ func (this *HTTPService) HandleMessageComplete(writer http.ResponseWriter, reque
 	//anthropicKey := request.Header.Get("x-api-key")
 
 	Log.Debug(string(body))
-	//Log.Debugf("%+v", req)
+	for _, msg := range req.Messages {
+		Log.Debugf("%+v", msg)
+	}
 
 	bedrockClient := NewBedrockClient(this.conf.BedrockConfig)
 	response, err := bedrockClient.MessageCompletion(&req)

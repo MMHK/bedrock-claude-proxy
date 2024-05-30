@@ -7,9 +7,6 @@
 
 Welcome to the `AWS Bedrock Claude Proxy` project! This project aims to provide a seamless proxy service that translates AWS Bedrock API calls into the format used by the official Anthropic API, making it easier for clients that support the official API to integrate with AWS Bedrock.
 
-**Note: This project is currently under development and is not stable. It is not recommended for use in production environments.**
-
-
 ## Introduction
 
 `AWS Bedrock Claude Proxy` is designed to act as an intermediary between AWS Bedrock and clients that are built to interact with the official Anthropic API. By using this proxy, developers can leverage the robust infrastructure of AWS Bedrock while maintaining compatibility with existing Anthropic-based applications.
@@ -52,9 +49,17 @@ Before you begin, ensure you have met the following requirements:
 1. **Create a `.env` file in the root directory and add your AWS credentials:**
 
     ```env
-    AWS_BEDROCK_ACCESS_KEY=your_access_key_id
-    AWS_BEDROCK_SECRET_KEY=your_secret_access_key
-    AWS_BEDROCK_REGION=your_aws_region
+   AWS_BEDROCK_ACCESS_KEY=your_access_key
+   AWS_BEDROCK_SECRET_KEY=your_secret_key
+   AWS_BEDROCK_REGION=your_region
+   WEB_ROOT=/path/to/web/root
+   HTTP_LISTEN=0.0.0.0:3000
+   API_KEY=your_api_key
+   AWS_BEDROCK_MODEL_MAPPINGS="claude-instant-1.2=anthropic.claude-instant-v1,claude-2.0=anthropic.claude-v2,claude-2.1=anthropic.claude-v2:1,claude-3-sonnet-20240229=anthropic.claude-3-sonnet-20240229-v1:0,claude-3-opus-20240229=anthropic.claude-3-opus-20240229-v1:0,claude-3-haiku-20240307=anthropic.claude-3-haiku-20240307-v1:0"
+   AWS_BEDROCK_ANTHROPIC_VERSION_MAPPINGS=2023-06-01=bedrock-2023-05-31
+   AWS_BEDROCK_ANTHROPIC_DEFAULT_MODEL=anthropic.claude-v2
+   AWS_BEDROCK_ANTHROPIC_DEFAULT_VERSION=bedrock-2023-05-31
+   LOG_LEVEL=INFO
     ```
 
 ## Usage

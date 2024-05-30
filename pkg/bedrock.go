@@ -142,7 +142,7 @@ func (this *ClaudeMessageCompletionRequestMessage) UnmarshalJSON(data []byte) er
 			this.Text = v
 		case []interface{}:
 			tmp := make([]*ClaudeMessageCompletionRequestContent, len(v))
-			for _, item := range v {
+			for i, item := range v {
 				if subMap, ok := item.(map[string]interface{}); ok {
 					row := &ClaudeMessageCompletionRequestContent{}
 					if _type, ok := subMap["type"].(string); ok {
@@ -150,11 +150,22 @@ func (this *ClaudeMessageCompletionRequestMessage) UnmarshalJSON(data []byte) er
 					}
 					if _text, ok := subMap["text"].(string); ok {
 						row.Text = _text
+
 					}
-					if _src, ok := subMap["source"].(*ClaudeMessageCompletionRequestContentSource); ok {
-						row.Source = _src
+					if _src, ok := subMap["source"].(map[string]interface{}); ok {
+						item := new(ClaudeMessageCompletionRequestContentSource)
+						if _t, ok := _src["type"].(string); ok {
+							item.Type = _t
+						}
+						if _t, ok := _src["media_type"].(string); ok {
+							item.MediaType = _t
+						}
+						if _t, ok := _src["data"].(string); ok {
+							item.Data = _t
+						}
+						row.Source = item
 					}
-					tmp = append(tmp, row)
+					tmp[i] = row
 				}
 			}
 			this.Content = tmp
