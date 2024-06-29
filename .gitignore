@@ -25,3 +25,8 @@ go.work
 /tests/langchain/node_modules
 /tests/langchain/.env
 /tests/langchain/.yarn
+/.yarn
+/.yarnrc.yml
+/package.json
+/yarn.lock
+/.pnp.cjs

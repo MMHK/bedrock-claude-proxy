@@ -232,7 +232,7 @@ type ClaudeMessageCompletionRequest struct {
 	System           string                                   `json:"system,omitempty"`
 	Messages         []*ClaudeMessageCompletionRequestMessage `json:"messages,omitempty"`
 	Metadata         *ClaudeMessageCompletionRequestMetadata  `json:"-"`
-	Tools            []*ClaudeMessageCompletionRequestTools   `json:"-"`
+	Tools            []*ClaudeMessageCompletionRequestTools   `json:"tools"`
 }
 
 func (this *ClaudeMessageCompletionRequest) UnmarshalJSON(data []byte) error {
