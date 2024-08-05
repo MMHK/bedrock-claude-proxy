@@ -5,9 +5,10 @@ services:
     restart: always
     environment:
       API_KEY: "your-api-key"
-      AWS_BEDROCK_ACCESS_KEY: "your-bedrock-access-key"
-      AWS_BEDROCK_SECRET_KEY: "your-bedrock-secret-key"
-      AWS_BEDROCK_REGION: "your-bedrock-region"
+      AWS_BEDROCK_ACCESS_KEY: "${AWS_BEDROCK_ACCESS_KEY}"
+      AWS_BEDROCK_SECRET_KEY: "${AWS_BEDROCK_SECRET_KEY}"
+      AWS_BEDROCK_REGION: "us-east-1"
+      AWS_BEDROCK_MODEL_MAPPINGS: "${AWS_BEDROCK_MODEL_MAPPINGS}"
     ports:
       - "3000:3000"
   chatgpt-next:
@@ -21,6 +22,6 @@ services:
       ANTHROPIC_URL: "http://bedrock-claude-proxy:3000"
       ANTHROPIC_API_KEY: "your-api-key"
       ANTHROPIC_API_VERSION: "2023-06-01"
-      CUSTOM_MODELS: "-all,+claude-2.1=claude-2.1(AWS bedrock),+claude-3-sonnet-20240229=claude-3-sonnet(AWS bedrock)"
+      CUSTOM_MODELS: "-all,+claude-2.1=claude-2.1(AWS bedrock),+claude-3-sonnet-20240229=claude-3.5-sonnet(AWS bedrock)"
     ports:
       - "4001:3000"

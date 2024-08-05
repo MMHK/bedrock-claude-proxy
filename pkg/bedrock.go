@@ -254,7 +254,17 @@ func (this *ClaudeMessageCompletionRequest) UnmarshalJSON(data []byte) error {
 	}
 
 	this.Metadata = tmp.Metadata
-	this.Tools = tmp.Tools
+	if tmp.Tools != nil {
+		this.Tools = tmp.Tools
+	} else {
+		this.Tools = []*ClaudeMessageCompletionRequestTools{}
+	}
+	if this.TopK < 0 {
+		this.TopK = 0
+	}
+	if this.TopP < 0 {
+		this.TopP = 0.0
+	}
 	this.Stream = tmp.Stream
 	this.Model = tmp.Model
 

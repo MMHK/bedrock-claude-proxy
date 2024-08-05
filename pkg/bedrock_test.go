@@ -3,6 +3,7 @@ package pkg
 import (
 	"bedrock-claude-proxy/tests"
 	_ "bedrock-claude-proxy/tests"
+	"encoding/json"
 	"testing"
 )
 
@@ -162,4 +163,17 @@ func TestBedrockClient_MessageCompletionWithStream(t *testing.T) {
 		t.Log(tests.ToJSON(resp.GetResponse()))
 	}
 	t.Log("PASS")
+}
+
+func TestClaudeMessageCompletionRequest_UnmarshalJSON(t *testing.T) {
+	raw := []byte("{\n    \"model\": \"claude-3-5-sonnet-20240620\",\n    \"max_tokens\": 1024,\n    \"messages\": [\n        {\"role\": \"user\", \"content\": \"Hello, world\"}\n    ]\n}")
+
+	req := ClaudeMessageCompletionRequest{}
+	err := json.Unmarshal(raw, &req)
+	if err != nil {
+		t.Fatal(err)
+		return
+	}
+
+	t.Log(tests.ToJSON(req))
 }
