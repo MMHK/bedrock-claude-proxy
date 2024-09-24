@@ -111,92 +111,20 @@ type ClaudeMessageCompletionRequestContentSource struct {
 }
 
 type ClaudeMessageCompletionRequestContent struct {
-	Type   string                                       `json:"type,omitempty"`
-	Text   string                                       `json:"text,omitempty"`
-	Source *ClaudeMessageCompletionRequestContentSource `json:"source,omitempty"`
+	Type      string                                       `json:"type,omitempty"`
+	Name      string                                       `json:"name,omitempty"`
+	Id        string                                       `json:"id,omitempty"`
+	Text      string                                       `json:"text,omitempty"`
+	ToolUseID string                                       `json:"tool_use_id,omitempty"`
+	IsError   string                                       `json:"is_error,omitempty"`
+	Source    *ClaudeMessageCompletionRequestContentSource `json:"source,omitempty"`
+	Content   json.RawMessage                              `json:"content,omitempty"`
 }
 
 type ClaudeMessageCompletionRequestMessage struct {
-	Role    string                                   `json:"role,omitempty"`
-	Content []*ClaudeMessageCompletionRequestContent `json:"-"`
-	Text    string                                   `json:"-"`
-}
-
-func (this *ClaudeMessageCompletionRequestMessage) UnmarshalJSON(data []byte) error {
-	// 定义一个临时的 map 来解码 JSON 数据
-	var tempMap map[string]interface{}
-	if err := json.Unmarshal(data, &tempMap); err != nil {
-		return err
-	}
-
-	if role, ok := tempMap["role"]; ok {
-		if roleStr, ok := role.(string); ok {
-			this.Role = roleStr
-		}
-	}
-
-	// 根据条件将 JSON 键映射到不同的字段
-	if value, ok := tempMap["content"]; ok {
-		switch v := value.(type) {
-		case string:
-			this.Text = v
-		case []interface{}:
-			tmp := make([]*ClaudeMessageCompletionRequestContent, len(v))
-			for i, item := range v {
-				if subMap, ok := item.(map[string]interface{}); ok {
-					row := &ClaudeMessageCompletionRequestContent{}
-					if _type, ok := subMap["type"].(string); ok {
-						row.Type = _type
-					}
-					if _text, ok := subMap["text"].(string); ok {
-						row.Text = _text
-
-					}
-					if _src, ok := subMap["source"].(map[string]interface{}); ok {
-						item := new(ClaudeMessageCompletionRequestContentSource)
-						if _t, ok := _src["type"].(string); ok {
-							item.Type = _t
-						}
-						if _t, ok := _src["media_type"].(string); ok {
-							item.MediaType = _t
-						}
-						if _t, ok := _src["data"].(string); ok {
-							item.Data = _t
-						}
-						row.Source = item
-					}
-					tmp[i] = row
-				}
-			}
-			this.Content = tmp
-		default:
-			return fmt.Errorf("unknown type for key")
-		}
-	}
-
-	return nil
-}
-
-func (this ClaudeMessageCompletionRequestMessage) MarshalJSON() ([]byte, error) {
-	type Alias ClaudeMessageCompletionRequestMessage
-
-	if len(this.Content) > 0 {
-		return json.Marshal(&struct {
-			Alias
-			Content interface{} `json:"content,omitempty"`
-		}{
-			Alias:   (Alias)(this),
-			Content: this.Content,
-		})
-	}
-
-	return json.Marshal(&struct {
-		Alias
-		Content interface{} `json:"content,omitempty"`
-	}{
-		Alias:   (Alias)(this),
-		Content: this.Text,
-	})
+	Role    string          `json:"role,omitempty"`
+	Content json.RawMessage `json:"content,omitempty"`
+	Text    string          `json:"text,omitempty"`
 }
 
 type ClaudeMessageCompletionRequestMetadata struct {
