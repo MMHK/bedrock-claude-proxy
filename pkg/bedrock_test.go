@@ -79,6 +79,9 @@ func TestBedrockClient_CompleteTextWithoutStream(t *testing.T) {
 func TestBedrockClient_MessageCompletionWithoutStream(t *testing.T) {
 	config := GetBedrockTestConfig()
 
+	t.Log(tests.ToJSON(config))
+
+
 	client := NewBedrockClient(config)
 
 	prompt := "創作一首7言律詩"
@@ -96,8 +99,10 @@ func TestBedrockClient_MessageCompletionWithoutStream(t *testing.T) {
 
 	resp, err := client.MessageCompletion(&ClaudeMessageCompletionRequest{
 		Temperature:      0.5,
-		Stream:           false,
-		Model:            "anthropic.claude-v2:1",
+		TopP:             1,
+		TopK:             5,
+		Stream:           true,
+		Model:            "claude-3-sonnet-20240229",
 		MaxToken:         2048,
 		System:           "You are a helpful assistant.",
 		AnthropicVersion: "bedrock-2023-05-31",

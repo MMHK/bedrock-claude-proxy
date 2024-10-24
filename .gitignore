@@ -30,3 +30,5 @@ go.work
 /package.json
 /yarn.lock
 /.pnp.cjs
+/searxng
+/tests/langchain/.idea

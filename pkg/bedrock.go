@@ -160,7 +160,7 @@ type ClaudeMessageCompletionRequest struct {
 	System           string                                   `json:"system,omitempty"`
 	Messages         []*ClaudeMessageCompletionRequestMessage `json:"messages,omitempty"`
 	Metadata         *ClaudeMessageCompletionRequestMetadata  `json:"-"`
-	Tools            []*ClaudeMessageCompletionRequestTools   `json:"tools"`
+	Tools            []*ClaudeMessageCompletionRequestTools   `json:"tools,omitempty"`
 }
 
 func (this *ClaudeMessageCompletionRequest) UnmarshalJSON(data []byte) error {
@@ -525,6 +525,7 @@ func (this *BedrockClient) MessageCompletion(req *ClaudeMessageCompletionRequest
 	}
 
 	Log.Debugf("Request: %s", string(body))
+	Log.Debugf("Request Model ID: %s", modelId)
 
 	if req.Stream {
 		output, err := this.client.InvokeModelWithResponseStream(context.Background(), &bedrock.InvokeModelWithResponseStreamInput{
