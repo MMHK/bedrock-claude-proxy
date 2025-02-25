@@ -3,7 +3,9 @@ package pkg
 import (
 	"bedrock-claude-proxy/tests"
 	_ "bedrock-claude-proxy/tests"
+	"bytes"
 	"encoding/json"
+	"net/http/httptest"
 	"testing"
 )
 
@@ -194,4 +196,33 @@ func TestClaudeMessageCompletionRequest_UnmarshalJSON(t *testing.T) {
 	}
 
 	t.Log(tests.ToJSON(req))
+}
+
+func TestClaude_HandleProxyJSON(t *testing.T) {
+	config := GetBedrockTestConfig()
+
+	config.DEBUG = true
+
+	tests.ToJSON(config)
+
+	bedrock := NewBedrockClient(config)
+
+	// 創建一個測試請求
+	req := httptest.NewRequest("POST", "https://api.anthropic.com/v1/messages", bytes.NewBufferString(`{
+	"model": "claude-3-7-sonnet-20250219",
+	"stream": true,
+	"messages": [{"role": "user", "content": "明天的前天，是昨天的后天吗？"}]
+}`))
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+
+
+	// 創建一個響應記錄器
+	w := httptest.NewRecorder()
+
+	bedrock.HandleProxy(w, req)
+}
+
+func TestClaude_HandleProxyStream(t *testing.T) {
+
 }

@@ -1,13 +1,23 @@
 package pkg
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
+	"io"
 	"log"
+	"net/http"
+	"net/http/httputil"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
@@ -24,6 +34,10 @@ type BedrockConfig struct {
 	ModelMappings            map[string]string `json:"model_mappings"`
 	AnthropicDefaultModel    string            `json:"anthropic_default_model"`
 	AnthropicDefaultVersion  string            `json:"anthropic_default_version"`
+	EnableComputerUse        bool              `json:"enable_computer_use"`
+	EnableOutputReason       bool              `json:"enable_output_reasoning"`
+	ReasonBudgetTokens       int               `json:"reason_budget_tokens"`
+	DEBUG 					 bool              `json:"debug,omitempty"`
 }
 
 func (this *BedrockConfig) GetInvokeEndpoint(modelId string) string {
@@ -31,7 +45,12 @@ func (this *BedrockConfig) GetInvokeEndpoint(modelId string) string {
 }
 
 func (this *BedrockConfig) GetInvokeStreamEndpoint(modelId string, region string) string {
-	return fmt.Sprintf("bedrock-runtime.%s.amazonaws.com/model/%s/invoke-with-response-stream", region, modelId)
+	return fmt.Sprintf("bedrock-runtime.%s.amazonaws.com/model/%s/invoke-with-response-stream", this.Region, modelId)
+}
+
+type ThinkingConfig struct {
+	Type         string `json:"type"`
+	BudgetTokens int    `json:"budget_tokens"`
 }
 
 func ParseMappingsFromStr(raw string) map[string]string {
@@ -52,7 +71,7 @@ func ParseMappingsFromStr(raw string) map[string]string {
 }
 
 func LoadBedrockConfigWithEnv() *BedrockConfig {
-	return &BedrockConfig{
+	config := &BedrockConfig{
 		AccessKey:                os.Getenv("AWS_BEDROCK_ACCESS_KEY"),
 		SecretKey:                os.Getenv("AWS_BEDROCK_SECRET_KEY"),
 		Region:                   os.Getenv("AWS_BEDROCK_REGION"),
@@ -60,7 +79,20 @@ func LoadBedrockConfigWithEnv() *BedrockConfig {
 		AnthropicVersionMappings: ParseMappingsFromStr(os.Getenv("AWS_BEDROCK_ANTHROPIC_VERSION_MAPPINGS")),
 		AnthropicDefaultModel:    os.Getenv("AWS_BEDROCK_ANTHROPIC_DEFAULT_MODEL"),
 		AnthropicDefaultVersion:  os.Getenv("AWS_BEDROCK_ANTHROPIC_DEFAULT_VERSION"),
+		EnableComputerUse:        os.Getenv("AWS_BEDROCK_ENABLE_COMPUTER_USE") == "true",
+		EnableOutputReason:       os.Getenv("AWS_BEDROCK_ENABLE_OUTPUT_REASON") == "true",
+		ReasonBudgetTokens:       1024,
 	}
+
+	budget := os.Getenv("AWS_BEDROCK_REASON_BUDGET_TOKENS")
+	if len(budget) > 0 {
+		if tokens, err := strconv.Atoi(budget); err == nil {
+			config.ReasonBudgetTokens = tokens
+		}
+	}
+
+
+	return config;
 }
 
 type BedrockClient struct {
@@ -408,6 +440,219 @@ func NewBedrockClient(config *BedrockConfig) *BedrockClient {
 		client: bedrock.NewFromConfig(cfg),
 	}
 }
+
+func (this *BedrockClient) GetModelMappings(source string) (string, error) {
+	if len(this.config.ModelMappings) > 0 {
+		if target, ok := this.config.ModelMappings[source]; ok {
+			return target, nil
+		}
+	}
+
+	return this.config.AnthropicDefaultModel, errors.New(fmt.Sprintf("model %s not found in model mappings", source))
+}
+
+func (this *BedrockClient) SignRequest(request *http.Request) (*http.Request, bool, error) {
+	contentType := request.Header.Get("Content-Type")
+	cloneReq := request
+	isStream := false
+	Model := ""
+	var bodyBuff bytes.Buffer
+
+	if strings.Contains(contentType, "json") {
+		reader := io.TeeReader(request.Body, &bodyBuff)
+
+		decoder := json.NewDecoder(reader)
+		wrapper := make(map[string]interface{})
+		err := decoder.Decode(&wrapper)
+		if err != nil {
+			Log.Error(err)
+			return request, false, err
+		}
+		if srcModel, ok := wrapper["model"]; ok {
+			if _model, ok := srcModel.(string); ok {
+				Model = _model
+			}
+		}
+		if srcStream, ok := wrapper["stream"]; ok {
+			if _stream, ok := srcStream.(bool); ok {
+				isStream = _stream
+			}
+		}
+
+		wrapper["anthropic_version"] = this.config.AnthropicDefaultVersion
+
+		if this.config.EnableComputerUse {
+			wrapper["anthropic_beta"] = "computer-use-2024-10-22"
+		}
+
+		if _, ok := wrapper["thinking"]; !ok && this.config.EnableOutputReason {
+			wrapper["thinking"] = &ThinkingConfig{
+				Type:         "enabled",
+				BudgetTokens: this.config.ReasonBudgetTokens,
+			}
+		}
+
+		newBody, err := json.Marshal(wrapper)
+		if err != nil {
+			return request, false, err
+		}
+
+		cloneReq = &http.Request{
+			Method: request.Method,
+			URL:    request.URL,
+			Proto:  request.Proto,
+			Header: request.Header.Clone(),
+			Body:   io.NopCloser(bytes.NewBuffer(newBody)),
+		}
+	}
+
+	cfg, err := awsConfig.LoadDefaultConfig(context.TODO(),
+		awsConfig.WithRegion(this.config.Region),
+		awsConfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+			this.config.AccessKey,
+			this.config.SecretKey,
+			"",
+		)),
+	)
+	if err != nil {
+		return nil, false, err
+	}
+
+	Model, err = this.GetModelMappings(Model)
+	if err != nil {
+		Log.Error(err)
+	}
+
+	bedrockRuntimeEndPoint := fmt.Sprintf(`https://bedrock-runtime.%s.amazonaws.com/model/%s/invoke`, this.config.Region, Model)
+	if isStream {
+		bedrockRuntimeEndPoint = fmt.Sprintf(`https://bedrock-runtime.%s.amazonaws.com/model/%s/invoke-with-response-stream`, this.config.Region, Model)
+	}
+
+	cloneReq, err = http.NewRequest("POST", bedrockRuntimeEndPoint, cloneReq.Body)
+	if err != nil {
+		Log.Error(err)
+		return nil, false, err
+	}
+
+	cloneReq.Header.Set("Content-Type", "application/json")
+	cloneReq.Header.Set("Accept", "application/json")
+
+	signer := v4.NewSigner()
+
+	// 获取凭证
+	credentialList, err := cfg.Credentials.Retrieve(context.TODO())
+	if err != nil {
+		Log.Error(err)
+		return nil, false, err
+	}
+
+	hash := sha256.Sum256(bodyBuff.Bytes())
+	payloadHash := hex.EncodeToString(hash[:])
+	// 签名请求
+	err = signer.SignHTTP(context.TODO(), credentialList, cloneReq, payloadHash, "bedrock", cfg.Region, time.Now())
+	if err != nil {
+		Log.Error(err)
+		return nil, false, err
+	}
+
+	return cloneReq, isStream, nil
+}
+
+func (this *BedrockClient) handleSSEStream(w http.ResponseWriter, res *http.Response) error {
+	// 設置 SSE 相關的 headers
+	for k, v := range res.Header {
+		w.Header()[k] = v
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		return fmt.Errorf("streaming unsupported")
+	}
+
+	if this.config.DEBUG {
+		Log.Infof("handleSSEStream: %s", res.Header.Get("Content-Type"))
+	}
+
+
+	scanner := bufio.NewScanner(res.Body)
+	for scanner.Scan() {
+		line := scanner.Text()
+
+
+		// 寫入修改後的行並立即刷新
+		fmt.Fprintf(w, "%s\n", line)
+		if this.config.DEBUG {
+			Log.Infof("SSE: %s\n", line)
+		}
+		flusher.Flush()
+	}
+
+	if err := scanner.Err(); err != nil {
+		Log.Error(err)
+		return err
+	}
+
+	return nil
+}
+
+
+func (this *BedrockClient) HandleProxy(w http.ResponseWriter, r *http.Request) {
+	cloneReq, isStream, err := this.SignRequest(r)
+	if err != nil {
+		Log.Error(err)
+		w.Header().Set("Content-Type", "application/json")
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	if isStream {
+		var (
+			resp *http.Response
+			err  error
+		)
+		// 發送請求到目標服務器
+		if this.config.DEBUG {
+			reqDump, _ := httputil.DumpRequestOut(cloneReq, true)
+			Log.Infof("Request:\n%s", string(reqDump))
+		}
+
+		resp, err = http.DefaultClient.Do(cloneReq)
+		if err != nil {
+			Log.Error(err)
+			w.Header().Set("Content-Type", "application/json")
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		defer resp.Body.Close()
+
+		if err := this.handleSSEStream(w, resp); err != nil {
+			Log.Error(err)
+		}
+		return
+	}
+
+	resp, err := http.DefaultClient.Do(cloneReq)
+	if err != nil {
+		Log.Error(err)
+		w.Header().Set("Content-Type", "application/json")
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	// 寫入修改後的響應
+	w.WriteHeader(resp.StatusCode)
+	for k, v := range resp.Header {
+		w.Header()[k] = v
+	}
+	_,err = io.Copy(w, resp.Body)
+	if err != nil {
+		Log.Error(err)
+	}
+}
+
 
 func (this *BedrockClient) CompleteText(req *ClaudeTextCompletionRequest) (IStreamableResponse, error) {
 	modelId := req.Model
