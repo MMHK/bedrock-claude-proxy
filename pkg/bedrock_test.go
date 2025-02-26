@@ -240,7 +240,7 @@ func TestClaude_HandleProxyStream(t *testing.T) {
 
 	bodyJSON := `{
     "max_tokens": 1024,
-    "messages": [{"role":"user","content":[{"type":"text","text":"創作一篇1000字小作文"}]}],
+    "messages": [{"role":"user","content":[{"type":"text","text":"創作1篇7言律诗"}]}],
 	"temperature":0.5,
 	"top_p":1,"top_k":5,"system":"You are a helpful assistant.",
     "model": "claude-3-haiku-20240307",

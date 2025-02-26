@@ -1,7 +1,6 @@
 package pkg
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -22,6 +21,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream"
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	bedrock "github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
@@ -637,13 +637,6 @@ func (this *RawAWSBedrockEvent) GetRawChunk() (string, string) {
 	return eventType.Type, string(jsonRaw)
 }
 func AsClaudeEvent(line string) string {
-	tmp := strings.SplitN(line, "{", 2)
-	line = tmp[1]
-	tmp = strings.SplitN(line, "}", 2)
-	line = tmp[0]
-
-	line = fmt.Sprintf(`{%s}`, line)
-
 	var rawEvent RawAWSBedrockEvent
 	decode := json.NewDecoder(strings.NewReader(line))
 	err := decode.Decode(&rawEvent)
@@ -655,7 +648,7 @@ func AsClaudeEvent(line string) string {
 	return fmt.Sprintf("event: %s\ndata: %s", eventType, raw)
 }
 
-func (this *BedrockClient) handleSSEStream(w http.ResponseWriter, res *http.Response) error {
+func (this *BedrockClient) handleBedrockStream(w http.ResponseWriter, res *http.Response) error {
 	// 設置 SSE 相關的 headers
 	for k, v := range res.Header {
 		w.Header()[k] = v
@@ -664,46 +657,66 @@ func (this *BedrockClient) handleSSEStream(w http.ResponseWriter, res *http.Resp
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		return fmt.Errorf("streaming unsupported")
-	}
-
 	StreamContentType := res.Header.Get("Content-Type")
 	BedrockContentType := res.Header.Get("X-Amzn-Bedrock-Content-Type")
 	isAWSEventstream := strings.Contains(StreamContentType, "amazon.eventstream")
 	isJSONEncoded := strings.Contains(BedrockContentType, "json")
 
 	if this.config.DEBUG {
-		Log.Infof("handleSSEStream: %s", res.Header.Get("Content-Type"))
+		Log.Infof("handleBedrockStream: %s", res.Header.Get("Content-Type"))
 		Log.Info("Response Header")
 		for k, v := range res.Header {
 			Log.Infof("%s: %s\n", k, v)
 		}
 	}
 
+	if !isAWSEventstream {
+		return nil
+	}
 
-	scanner := bufio.NewScanner(res.Body)
-	for scanner.Scan() {
-		rawline := scanner.Text()
-		line := rawline
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		return fmt.Errorf("streaming unsupported")
+	}
 
-		if isAWSEventstream && isJSONEncoded {
-			line = AsClaudeEvent(rawline)
+	decoder := eventstream.NewDecoder()
+
+	// 创建缓冲读取器
+	buf := make([]byte, 256*1024) // 256k 缓冲区，可根据需要调整
+
+	for {
+		// 读取事件头部 (前面的12字节包含总长度等信息)
+		msg, err := decoder.Decode(res.Body, buf)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return fmt.Errorf("解码错误: %v\n", err)
 		}
 
-		// 寫入修改後的行並立即刷新
-		fmt.Fprintf(w, "%s\n", line)
+		//if this.config.DEBUG {
+		//	Log.Info("New Message")
+		//}
+
+		//for _, header := range msg.Headers {
+		//	Log.Infof("头部: %s = %v\n", header.Name, header.Value)
+		//}
+
 		if this.config.DEBUG {
-			Log.Infof("SSE: %s\n", rawline)
+			Log.Infof("handleBedrockStreamRaw: %s\n", string(msg.Payload))
 		}
-		flusher.Flush()
+
+
+		if isJSONEncoded {
+			// 查找事件类型和内容 (需要根据EventStream具体格式进一步解析)
+			// 简化示例: 假设数据是JSON格式
+			SSEEvent := AsClaudeEvent(string(msg.Payload))
+			// 寫入修改後的行並立即刷新
+			fmt.Fprintf(w, "%s\n", SSEEvent)
+			flusher.Flush()
+		}
 	}
 
-	if err := scanner.Err(); err != nil {
-		Log.Error(err)
-		return err
-	}
 
 	return nil
 }
@@ -738,7 +751,7 @@ func (this *BedrockClient) HandleProxy(w http.ResponseWriter, r *http.Request) {
 		}
 		defer resp.Body.Close()
 
-		if err := this.handleSSEStream(w, resp); err != nil {
+		if err := this.handleBedrockStream(w, resp); err != nil {
 			Log.Error(err)
 		}
 		return
