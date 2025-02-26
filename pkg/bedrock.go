@@ -545,6 +545,10 @@ func (this *BedrockClient) SignRequest(request *http.Request) (*http.Request, bo
 			}
 		}
 
+		if !this.config.EnableOutputReason {
+			delete(wrapper, "thinking")
+		}
+
 		newBody, err := json.Marshal(wrapper)
 		if err != nil {
 			return request, false, err
@@ -584,7 +588,7 @@ func (this *BedrockClient) SignRequest(request *http.Request) (*http.Request, bo
 		Log.Error(err)
 		return nil, false, err
 	}
-	preSignReq.Header = cloneReq.Header.Clone()
+	preSignReq.Header.Set("Content-Type", contentType)
 	preSignReq.ContentLength = int64(bodyBuff.Len())
 
 	signer := v4.NewSigner()
@@ -645,7 +649,7 @@ func AsClaudeEvent(line string) string {
 		return ""
 	}
 	eventType, raw := rawEvent.GetRawChunk()
-	return fmt.Sprintf("event: %s\ndata: %s", eventType, raw)
+	return fmt.Sprintf("event: %s\ndata: %s\n", eventType, raw)
 }
 
 func (this *BedrockClient) handleBedrockStream(w http.ResponseWriter, res *http.Response) error {
@@ -711,6 +715,9 @@ func (this *BedrockClient) handleBedrockStream(w http.ResponseWriter, res *http.
 			// 查找事件类型和内容 (需要根据EventStream具体格式进一步解析)
 			// 简化示例: 假设数据是JSON格式
 			SSEEvent := AsClaudeEvent(string(msg.Payload))
+			if this.config.DEBUG {
+				Log.Infof("SSE: %s\n", SSEEvent)
+			}
 			// 寫入修改後的行並立即刷新
 			fmt.Fprintf(w, "%s\n", SSEEvent)
 			flusher.Flush()

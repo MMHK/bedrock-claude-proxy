@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/gorilla/mux"
-	"io"
 	"net/http"
 )
 
@@ -151,47 +150,10 @@ func (this *HTTPService) HandleMessageComplete(writer http.ResponseWriter, reque
 		return
 	}
 
-	// 读取请求 body
-	body, err := io.ReadAll(request.Body)
-	if err != nil {
-		this.ResponseError(fmt.Errorf("Error reading request body"), writer)
-		return
-	}
-	defer request.Body.Close()
-
-	// json decode request body
-	var req ClaudeMessageCompletionRequest
-	err = json.Unmarshal(body, &req)
-	if err != nil {
-		this.ResponseError(err, writer)
-		return
-	}
-	// get anthropic-version,x-api-key from request
-	anthropicVersion := request.Header.Get("anthropic-version")
-	if len(anthropicVersion) > 0 {
-		req.AnthropicVersion = anthropicVersion
-	}
-	//anthropicKey := request.Header.Get("x-api-key")
-
-	Log.Debug(string(body))
-	for _, msg := range req.Messages {
-		Log.Debugf("%+v", msg)
-	}
-
-	bedrockClient := NewBedrockClient(this.conf.BedrockConfig)
-	response, err := bedrockClient.MessageCompletion(&req)
-	if err != nil {
-		this.ResponseError(err, writer)
-		return
-	}
-
-	if response.IsStream() {
-		// output & flush SSE
-		this.ResponseSSE(writer, response.GetEvents())
-		return
-	}
-
-	this.ResponseJSON(response.GetResponse(), writer)
+	config := LoadBedrockConfigWithEnv()
+	config.DEBUG = true
+	bedrock := NewBedrockClient(config)
+	bedrock.HandleProxy(writer, request)
 }
 
 // APIKeyMiddleware 验证 API Key 的中间件
