@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -14,6 +15,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httputil"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -425,12 +427,54 @@ func (this *ClaudeTextCompletionStreamEventList) Completion() string {
 	return completion
 }
 
+// 自定义的 RoundTripper 用于记录请求和响应
+type loggingRoundTripper struct {
+	wrapped http.RoundTripper
+}
+
+func (l loggingRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	// 记录请求
+	reqDump, _ := httputil.DumpRequestOut(req, true)
+	Log.Infof("Request:\n%s", string(reqDump))
+
+	// 发送请求
+	resp, err := l.wrapped.RoundTrip(req)
+	if err != nil {
+		return nil, err
+	}
+
+	// 记录响应
+	respDump, _ := httputil.DumpResponse(resp, true)
+	Log.Infof("Response:\n%s", string(respDump))
+
+	// 重要：我们需要重新创建响应体，因为 DumpResponse 会消耗它
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
+	return resp, nil
+}
+
 func NewBedrockClient(config *BedrockConfig) *BedrockClient {
 	staticProvider := credentials.NewStaticCredentialsProvider(config.AccessKey, config.SecretKey, "")
 
-	cfg, err := awsConfig.LoadDefaultConfig(context.TODO(),
+	opt := []func(*awsConfig.LoadOptions)error {
 		awsConfig.WithRegion(config.Region),
-		awsConfig.WithCredentialsProvider(staticProvider))
+		awsConfig.WithCredentialsProvider(staticProvider),
+	}
+
+	if config.DEBUG {
+		httpClient := &http.Client{
+			Transport: loggingRoundTripper{
+				wrapped: http.DefaultTransport,
+			},
+		}
+		opt = append(opt, awsConfig.WithHTTPClient(httpClient))
+	}
+
+
+	cfg, err := awsConfig.LoadDefaultConfig(context.TODO(), opt...)
+
 	if err != nil {
 		log.Fatalf("unable to load SDK config, %v", err)
 	}
@@ -457,10 +501,9 @@ func (this *BedrockClient) SignRequest(request *http.Request) (*http.Request, bo
 	isStream := false
 	Model := ""
 	var bodyBuff bytes.Buffer
+	reader := io.TeeReader(request.Body, &bodyBuff)
 
 	if strings.Contains(contentType, "json") {
-		reader := io.TeeReader(request.Body, &bodyBuff)
-
 		decoder := json.NewDecoder(reader)
 		wrapper := make(map[string]interface{})
 		err := decoder.Decode(&wrapper)
@@ -473,6 +516,14 @@ func (this *BedrockClient) SignRequest(request *http.Request) (*http.Request, bo
 				Model = _model
 			}
 		}
+
+		Model, err = this.GetModelMappings(Model)
+		if err != nil {
+			Log.Error(err)
+		} else {
+			wrapper["model"] = Model
+		}
+
 		if srcStream, ok := wrapper["stream"]; ok {
 			if _stream, ok := srcStream.(bool); ok {
 				isStream = _stream
@@ -480,6 +531,8 @@ func (this *BedrockClient) SignRequest(request *http.Request) (*http.Request, bo
 		}
 
 		wrapper["anthropic_version"] = this.config.AnthropicDefaultVersion
+		delete(wrapper, "model")
+		delete(wrapper, "stream")
 
 		if this.config.EnableComputerUse {
 			wrapper["anthropic_beta"] = "computer-use-2024-10-22"
@@ -497,12 +550,15 @@ func (this *BedrockClient) SignRequest(request *http.Request) (*http.Request, bo
 			return request, false, err
 		}
 
+
+		bodyBuff = *bytes.NewBuffer(newBody)
+
 		cloneReq = &http.Request{
 			Method: request.Method,
 			URL:    request.URL,
 			Proto:  request.Proto,
 			Header: request.Header.Clone(),
-			Body:   io.NopCloser(bytes.NewBuffer(newBody)),
+			Body:   io.NopCloser(bytes.NewBuffer(bodyBuff.Bytes())),
 		}
 	}
 
@@ -518,24 +574,18 @@ func (this *BedrockClient) SignRequest(request *http.Request) (*http.Request, bo
 		return nil, false, err
 	}
 
-	Model, err = this.GetModelMappings(Model)
-	if err != nil {
-		Log.Error(err)
-	}
-
-	bedrockRuntimeEndPoint := fmt.Sprintf(`https://bedrock-runtime.%s.amazonaws.com/model/%s/invoke`, this.config.Region, Model)
+	bedrockRuntimeEndPoint := fmt.Sprintf(`https://bedrock-runtime.%s.amazonaws.com/model/%s/invoke`, this.config.Region, url.QueryEscape(Model))
 	if isStream {
-		bedrockRuntimeEndPoint = fmt.Sprintf(`https://bedrock-runtime.%s.amazonaws.com/model/%s/invoke-with-response-stream`, this.config.Region, Model)
+		bedrockRuntimeEndPoint = fmt.Sprintf(`https://bedrock-runtime.%s.amazonaws.com/model/%s/invoke-with-response-stream`, this.config.Region,url.QueryEscape(Model))
 	}
 
-	cloneReq, err = http.NewRequest("POST", bedrockRuntimeEndPoint, cloneReq.Body)
+	preSignReq, err := http.NewRequest("POST", bedrockRuntimeEndPoint, cloneReq.Body)
 	if err != nil {
 		Log.Error(err)
 		return nil, false, err
 	}
-
-	cloneReq.Header.Set("Content-Type", "application/json")
-	cloneReq.Header.Set("Accept", "application/json")
+	preSignReq.Header = cloneReq.Header.Clone()
+	preSignReq.ContentLength = int64(bodyBuff.Len())
 
 	signer := v4.NewSigner()
 
@@ -549,13 +599,60 @@ func (this *BedrockClient) SignRequest(request *http.Request) (*http.Request, bo
 	hash := sha256.Sum256(bodyBuff.Bytes())
 	payloadHash := hex.EncodeToString(hash[:])
 	// 签名请求
-	err = signer.SignHTTP(context.TODO(), credentialList, cloneReq, payloadHash, "bedrock", cfg.Region, time.Now())
+	err = signer.SignHTTP(context.TODO(), credentialList, preSignReq, payloadHash, "bedrock", cfg.Region, time.Now(), func(options *v4.SignerOptions) {
+		if this.config.DEBUG {
+			options.LogSigning = true
+		}
+	})
 	if err != nil {
 		Log.Error(err)
 		return nil, false, err
 	}
 
-	return cloneReq, isStream, nil
+	return preSignReq, isStream, nil
+}
+
+type RawAWSBedrockEvent struct {
+	Bytes    string `json:"bytes"`
+	P        string `json:"p"`
+}
+
+func (this *RawAWSBedrockEvent) GetRawChunk() (string, string) {
+	jsonRaw, err := base64.StdEncoding.DecodeString(this.Bytes)
+	if err != nil {
+		Log.Error(err)
+	}
+
+	type EventTypeWrapper struct {
+		Type string `json:"type"`
+	}
+
+	var eventType EventTypeWrapper
+
+	err = json.Unmarshal(jsonRaw, &eventType)
+	if err != nil {
+		Log.Error(err)
+	}
+
+	return eventType.Type, string(jsonRaw)
+}
+func AsClaudeEvent(line string) string {
+	tmp := strings.SplitN(line, "{", 2)
+	line = tmp[1]
+	tmp = strings.SplitN(line, "}", 2)
+	line = tmp[0]
+
+	line = fmt.Sprintf(`{%s}`, line)
+
+	var rawEvent RawAWSBedrockEvent
+	decode := json.NewDecoder(strings.NewReader(line))
+	err := decode.Decode(&rawEvent)
+	if err != nil {
+		Log.Error(err)
+		return ""
+	}
+	eventType, raw := rawEvent.GetRawChunk()
+	return fmt.Sprintf("event: %s\ndata: %s", eventType, raw)
 }
 
 func (this *BedrockClient) handleSSEStream(w http.ResponseWriter, res *http.Response) error {
@@ -572,20 +669,33 @@ func (this *BedrockClient) handleSSEStream(w http.ResponseWriter, res *http.Resp
 		return fmt.Errorf("streaming unsupported")
 	}
 
+	StreamContentType := res.Header.Get("Content-Type")
+	BedrockContentType := res.Header.Get("X-Amzn-Bedrock-Content-Type")
+	isAWSEventstream := strings.Contains(StreamContentType, "amazon.eventstream")
+	isJSONEncoded := strings.Contains(BedrockContentType, "json")
+
 	if this.config.DEBUG {
 		Log.Infof("handleSSEStream: %s", res.Header.Get("Content-Type"))
+		Log.Info("Response Header")
+		for k, v := range res.Header {
+			Log.Infof("%s: %s\n", k, v)
+		}
 	}
 
 
 	scanner := bufio.NewScanner(res.Body)
 	for scanner.Scan() {
-		line := scanner.Text()
+		rawline := scanner.Text()
+		line := rawline
 
+		if isAWSEventstream && isJSONEncoded {
+			line = AsClaudeEvent(rawline)
+		}
 
 		// 寫入修改後的行並立即刷新
 		fmt.Fprintf(w, "%s\n", line)
 		if this.config.DEBUG {
-			Log.Infof("SSE: %s\n", line)
+			Log.Infof("SSE: %s\n", rawline)
 		}
 		flusher.Flush()
 	}
@@ -634,7 +744,17 @@ func (this *BedrockClient) HandleProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := http.DefaultClient.Do(cloneReq)
+
+	httpClient := http.DefaultClient
+	if this.config.DEBUG {
+		httpClient = &http.Client{
+			Transport: loggingRoundTripper{
+				wrapped: http.DefaultTransport,
+			},
+		}
+	}
+
+	resp, err := httpClient.Do(cloneReq)
 	if err != nil {
 		Log.Error(err)
 		w.Header().Set("Content-Type", "application/json")

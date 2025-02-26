@@ -5,6 +5,7 @@ import (
 	_ "bedrock-claude-proxy/tests"
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http/httptest"
 	"testing"
 )
@@ -81,8 +82,9 @@ func TestBedrockClient_CompleteTextWithoutStream(t *testing.T) {
 func TestBedrockClient_MessageCompletionWithoutStream(t *testing.T) {
 	config := GetBedrockTestConfig()
 
-	t.Log(tests.ToJSON(config))
+	//t.Log(tests.ToJSON(config))
 
+	config.DEBUG = true
 
 	client := NewBedrockClient(config)
 
@@ -103,8 +105,8 @@ func TestBedrockClient_MessageCompletionWithoutStream(t *testing.T) {
 		Temperature:      0.5,
 		TopP:             1,
 		TopK:             5,
-		Stream:           true,
-		Model:            "claude-3-sonnet-20240229",
+		Stream:           false,
+		Model:            "claude-3-haiku-20240307",
 		MaxToken:         2048,
 		System:           "You are a helpful assistant.",
 		AnthropicVersion: "bedrock-2023-05-31",
@@ -207,14 +209,18 @@ func TestClaude_HandleProxyJSON(t *testing.T) {
 
 	bedrock := NewBedrockClient(config)
 
+	bodyJSON := `{
+    "max_tokens": 1024,
+    "messages": [{"role":"user","content":[{"type":"text","text":"創作一篇1000字小作文"}]}],
+	"temperature":0.5,
+	"top_p":1,"top_k":5,"system":"You are a helpful assistant.",
+    "model": "claude-3-haiku-20240307",
+    "stream": false
+}`
 	// 創建一個測試請求
-	req := httptest.NewRequest("POST", "https://api.anthropic.com/v1/messages", bytes.NewBufferString(`{
-	"model": "claude-3-7-sonnet-20250219",
-	"stream": true,
-	"messages": [{"role": "user", "content": "明天的前天，是昨天的后天吗？"}]
-}`))
-	req.Header.Set("Accept", "application/json")
+	req := httptest.NewRequest("POST", "https://api.anthropic.com/v1/messages", bytes.NewBufferString(bodyJSON))
 	req.Header.Set("Content-Type", "application/json")
+	//req.Header.Set("Accept", "application/json")
 
 
 	// 創建一個響應記錄器
@@ -224,5 +230,42 @@ func TestClaude_HandleProxyJSON(t *testing.T) {
 }
 
 func TestClaude_HandleProxyStream(t *testing.T) {
+	config := GetBedrockTestConfig()
 
+	config.DEBUG = true
+
+	tests.ToJSON(config)
+
+	bedrock := NewBedrockClient(config)
+
+	bodyJSON := `{
+    "max_tokens": 1024,
+    "messages": [{"role":"user","content":[{"type":"text","text":"創作一篇1000字小作文"}]}],
+	"temperature":0.5,
+	"top_p":1,"top_k":5,"system":"You are a helpful assistant.",
+    "model": "claude-3-haiku-20240307",
+    "stream": true
+}`
+	// 創建一個測試請求
+	req := httptest.NewRequest("POST", "https://api.anthropic.com/v1/messages", bytes.NewBufferString(bodyJSON))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+
+
+	// 創建一個響應記錄器
+	w := httptest.NewRecorder()
+
+	bedrock.HandleProxy(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != 200 {
+		t.Errorf("Expected status code 200, got %d", resp.StatusCode)
+	} else {
+		t.Logf("status: %d", resp.StatusCode)
+		t.Logf("headers: %v", resp.Header)
+		respData, err := io.ReadAll(resp.Body)
+		if err == nil {
+			t.Logf("body: %s", string(respData))
+		}
+	}
 }
