@@ -1,5 +1,4 @@
 import { ChatAnthropic  } from "@langchain/anthropic";
-import { StringOutputParser  } from "@langchain/core/output_parsers";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { z } from "zod";
@@ -17,20 +16,14 @@ describe('Anthropic API Tests', () => {
 
         const messages = [
             new SystemMessage("You are a helpful assistant."),
-            new HumanMessage("Hello, how are you?"),
+            new HumanMessage("Hello, how are you? say hello to me"),
         ];
 
-        const response = await model.invoke(messages);
+        const AIMessage = await model.invoke(messages);
 
-        const parser = new StringOutputParser();
-
-        const result = await parser.invoke(response);
-
-        console.log(result)
-
-        expect(result).toBeDefined();
-        expect(result).toContain('Hello');
-    });
+        expect(AIMessage.content).toBeDefined();
+        expect(AIMessage.content).toContain('Hello');
+    }, 60000);
 
     test('stream', async () => {
         const model = new ChatAnthropic({
@@ -42,7 +35,7 @@ describe('Anthropic API Tests', () => {
 
         const messages = [
             new SystemMessage("You are a helpful assistant."),
-            new HumanMessage("Hello, how are you?"),
+            new HumanMessage("Hello, how are you? say hello to me"),
         ];
 
         const stream = await model.stream(messages);

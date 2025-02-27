@@ -32,7 +32,7 @@ WORKDIR /app
 
 # Copy the Pre-built binary file from the previous stage
 COPY --from=builder /app/bedrock-claude-proxy .
-COPY --from=builder /app/webroot .
+COPY --from=builder /app/webroot ./webroot
 COPY --from=builder /app/config.json .
 
 ENV HTTP_LISTEN=0.0.0.0:3000 \
@@ -45,6 +45,10 @@ ENV HTTP_LISTEN=0.0.0.0:3000 \
  AWS_BEDROCK_ANTHROPIC_VERSION_MAPPINGS="2023-06-01=bedrock-2023-05-31" \
  AWS_BEDROCK_ANTHROPIC_DEFAULT_MODEL=anthropic.claude-v2 \
  AWS_BEDROCK_ANTHROPIC_DEFAULT_VERSION=bedrock-2023-05-31 \
+ AWS_BEDROCK_ENABLE_OUTPUT_REASON=false \
+ AWS_BEDROCK_REASON_BUDGET_TOKENS=1024 \
+ AWS_BEDROCK_ENABLE_COMPUTER_USE=false \
+ AWS_BEDROCK_DEBUG=false \
  LOG_LEVEL=INFO
 
 EXPOSE 3000

@@ -1,0 +1,286 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Anthropic Claude Messages API",
+    "description": "API for interacting with Anthropic's Claude conversational AI model using the Messages endpoint, including thinking trace capabilities.",
+    "version": "1.0.0",
+    "contact": {
+      "name": "Anthropic Support",
+      "url": "https://www.anthropic.com/support"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://api.anthropic.com"
+    }
+  ],
+  "paths": {
+    "/v1/messages": {
+      "post": {
+        "summary": "Create a new message conversation with Claude",
+        "description": "Sends a message or a series of messages to Claude and retrieves a response, optionally including thinking traces.",
+        "operationId": "createMessage",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response with Claude's reply and optional thinking trace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - invalid parameters or malformed JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing API key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests - rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-api-key"
+      }
+    },
+    "schemas": {
+      "MessageRequest": {
+        "type": "object",
+        "required": [
+          "model",
+          "messages",
+          "max_tokens"
+        ],
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "The Claude model to use (e.g., claude-3-5-sonnet-20241022).",
+            "example": "claude-3-5-sonnet-20241022"
+          },
+          "messages": {
+            "type": "array",
+            "description": "List of messages in the conversation, starting with a user message.",
+            "items": {
+              "$ref": "#/components/schemas/Message"
+            }
+          },
+          "max_tokens": {
+            "type": "integer",
+            "description": "Maximum number of tokens to generate in the response.",
+            "example": 1024
+          },
+          "temperature": {
+            "type": "number",
+            "description": "Controls randomness of the response (0 to 1). Lower for analytical, higher for creative tasks.",
+            "minimum": 0,
+            "maximum": 1,
+            "example": 0.7
+          },
+          "system": {
+            "type": "string",
+            "description": "Optional system prompt to set context or instructions for Claude.",
+            "example": "You are a helpful assistant created by Anthropic."
+          },
+          "top_p": {
+            "type": "number",
+            "description": "Nucleus sampling parameter (0 to 1).",
+            "minimum": 0,
+            "maximum": 1,
+            "example": 0.9
+          },
+          "top_k": {
+            "type": "integer",
+            "description": "Only sample from the top K options for each token.",
+            "example": 40
+          },
+          "thinking": {
+            "type": "object",
+            "description": "Whether to include the thinking trace in the response (if supported by the model).",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "enabled",
+                  "disabled"
+                ]
+              },
+              "budget_tokens": {
+                "type": "integer",
+                "description": "Determines how many tokens Claude can use for its internal reasoning process. Larger budgets can enable more thorough analysis for complex problems, improving response quality. Must be ≥1024 and less than max_tokens."
+              }
+            }
+          }
+        }
+      },
+      "Message": {
+        "type": "object",
+        "required": [
+          "role",
+          "content"
+        ],
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "description": "The role of the message sender.",
+            "example": "user"
+          },
+          "content": {
+            "type": "string",
+            "description": "The content of the message.",
+            "example": "Hello, how can I assist you today?"
+          }
+        }
+      },
+      "MessageResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique identifier for the message response.",
+            "example": "msg_12345"
+          },
+          "type": {
+            "type": "string",
+            "description": "Type of response, always \"message\" for this endpoint.",
+            "example": "message"
+          },
+          "role": {
+            "type": "string",
+            "description": "Role of the responder, always \"assistant\".",
+            "example": "assistant"
+          },
+          "content": {
+            "type": "array",
+            "description": "The generated content from Claude.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "example": "text"
+                },
+                "text": {
+                  "type": "string",
+                  "example": "Hi there! I'm here to help you with any questions."
+                }
+              }
+            }
+          },
+          "thinking": {
+            "type": "object",
+            "description": "Optional thinking trace showing Claude's reasoning process (returned if include_thinking is true).",
+            "properties": {
+              "trace": {
+                "type": "string",
+                "description": "A detailed log of the model's thought process before arriving at the final response.",
+                "example": "Let's break this down step-by-step. First, the user asked for assistance. Given the context, a friendly greeting seems appropriate..."
+              }
+            },
+            "nullable": true
+          },
+          "usage": {
+            "type": "object",
+            "properties": {
+              "input_tokens": {
+                "type": "integer",
+                "example": 10
+              },
+              "output_tokens": {
+                "type": "integer",
+                "example": 15
+              },
+              "thinking_tokens": {
+                "type": "integer",
+                "description": "Tokens used for the thinking trace, if included.",
+                "example": 50,
+                "nullable": true
+              }
+            }
+          },
+          "stop_reason": {
+            "type": "string",
+            "description": "Reason the model stopped generating (e.g., max_tokens, stop_sequence).",
+            "example": "max_tokens"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "example": "invalid_request_error"
+              },
+              "message": {
+                "type": "string",
+                "example": "Invalid parameter provided"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

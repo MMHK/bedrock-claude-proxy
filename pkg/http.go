@@ -15,6 +15,7 @@ type HttpConfig struct {
 
 type HTTPService struct {
 	conf *Config
+	bedrockClient *BedrockClient
 }
 
 type APIError struct {
@@ -28,8 +29,11 @@ type APIStandardError struct {
 }
 
 func NewHttpService(conf *Config) *HTTPService {
+	bedrock := NewBedrockClient(conf.BedrockConfig)
+
 	return &HTTPService{
 		conf: conf,
+		bedrockClient: bedrock,
 	}
 }
 
@@ -66,80 +70,6 @@ func (this *HTTPService) ResponseJSON(source interface{}, writer http.ResponseWr
 	}
 }
 
-func (this *HTTPService) ResponseSSE(writer http.ResponseWriter, queue <-chan ISSEDecoder) {
-	// output & flush SSE
-	flusher, ok := writer.(http.Flusher)
-	if !ok {
-		this.ResponseError(fmt.Errorf("streaming not supported"), writer)
-		return
-	}
-	writer.Header().Set("Content-Type", "text/event-stream")
-	writer.Header().Set("Cache-Control", "no-cache")
-	writer.Header().Set("Connection", "keep-alive")
-
-	for event := range queue {
-		_, err := writer.Write(NewSSERaw(event))
-		if err != nil {
-			Log.Error(err)
-			continue
-		}
-		flusher.Flush()
-	}
-}
-
-func (this *HTTPService) HandleComplete(writer http.ResponseWriter, request *http.Request) {
-	if request.Method != "POST" {
-		this.ResponseError(fmt.Errorf("method not allowed"), writer)
-		return
-	}
-	if request.Header.Get("Content-Type") != "application/json" {
-		this.ResponseError(fmt.Errorf("invalid content type"), writer)
-		return
-	}
-	defer request.Body.Close()
-	// json decode request body
-	var req *ClaudeTextCompletionRequest
-	err := json.NewDecoder(request.Body).Decode(&req)
-	if err != nil {
-		this.ResponseError(err, writer)
-		return
-	}
-	// get anthropic-version,x-api-key from request
-	//anthropicVersion := request.Header.Get("anthropic-version")
-	//anthropicKey := request.Header.Get("x-api-key")
-
-	bedrockClient := NewBedrockClient(this.conf.BedrockConfig)
-	response, err := bedrockClient.CompleteText(req)
-	if err != nil {
-		this.ResponseError(err, writer)
-		return
-	}
-
-	if response.IsStream() {
-		// output & flush SSE
-		flusher, ok := writer.(http.Flusher)
-		if !ok {
-			this.ResponseError(fmt.Errorf("streaming not supported"), writer)
-			return
-		}
-		writer.Header().Set("Content-Type", "text/event-stream")
-		writer.Header().Set("Cache-Control", "no-cache")
-		writer.Header().Set("Connection", "keep-alive")
-
-		for event := range response.GetEvents() {
-			_, err = writer.Write(NewSSERaw(event))
-			if err != nil {
-				Log.Error(err)
-				continue
-			}
-			flusher.Flush()
-		}
-		return
-	}
-
-	this.ResponseJSON(response.GetResponse(), writer)
-}
-
 func (this *HTTPService) HandleMessageComplete(writer http.ResponseWriter, request *http.Request) {
 	if request.Method != "POST" {
 		this.ResponseError(fmt.Errorf("method not allowed"), writer)
@@ -150,10 +80,7 @@ func (this *HTTPService) HandleMessageComplete(writer http.ResponseWriter, reque
 		return
 	}
 
-	config := LoadBedrockConfigWithEnv()
-	config.DEBUG = true
-	bedrock := NewBedrockClient(config)
-	bedrock.HandleProxy(writer, request)
+	this.bedrockClient.HandleProxy(writer, request)
 }
 
 // APIKeyMiddleware 验证 API Key 的中间件
@@ -190,7 +117,6 @@ func (this *HTTPService) Start() {
 	apiRouter := rHandler.PathPrefix("/v1").Subrouter()
 	apiRouter.Use(this.APIKeyMiddleware)
 
-	apiRouter.HandleFunc("/complete", this.HandleComplete)
 	apiRouter.HandleFunc("/messages", this.HandleMessageComplete)
 
 	rHandler.HandleFunc("/", this.RedirectSwagger)

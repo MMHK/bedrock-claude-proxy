@@ -59,6 +59,10 @@ Before you begin, ensure you have met the following requirements:
    AWS_BEDROCK_ANTHROPIC_VERSION_MAPPINGS=2023-06-01=bedrock-2023-05-31
    AWS_BEDROCK_ANTHROPIC_DEFAULT_MODEL=anthropic.claude-v2
    AWS_BEDROCK_ANTHROPIC_DEFAULT_VERSION=bedrock-2023-05-31
+   AWS_BEDROCK_ENABLE_OUTPUT_REASON=false
+   AWS_BEDROCK_REASON_BUDGET_TOKENS=2048
+   AWS_BEDROCK_ENABLE_COMPUTER_USE=false
+   AWS_BEDROCK_DEBUG=false
    LOG_LEVEL=INFO
     ```
 
@@ -122,7 +126,12 @@ Before you begin, ensure you have met the following requirements:
 - AWS_BEDROCK_ANTHROPIC_VERSION_MAPPINGS: Mappings of Bedrock versions to Anthropic versions.
 - AWS_BEDROCK_ANTHROPIC_DEFAULT_MODEL: The default Anthropic model to use.
 - AWS_BEDROCK_ANTHROPIC_DEFAULT_VERSION: The default Anthropic version to use.
+- AWS_BEDROCK_ENABLE_OUTPUT_REASON: Enable output reason.
+- AWS_BEDROCK_REASON_BUDGET_TOKENS: Budget tokens for output reason.
+- AWS_BEDROCK_ENABLE_COMPUTER_USE: Enable computer use.
+- AWS_BEDROCK_DEBUG: Enable debug mode.
 - LOG_LEVEL: The logging level (e.g., `INFO`, `DEBUG`, `ERROR`).
+
 
 Example `.env` file:
 
@@ -137,6 +146,10 @@ AWS_BEDROCK_MODEL_MAPPINGS="claude-instant-1.2=anthropic.claude-instant-v1,claud
 AWS_BEDROCK_ANTHROPIC_VERSION_MAPPINGS=2023-06-01=bedrock-2023-05-31
 AWS_BEDROCK_ANTHROPIC_DEFAULT_MODEL=anthropic.claude-v2
 AWS_BEDROCK_ANTHROPIC_DEFAULT_VERSION=bedrock-2023-05-31
+AWS_BEDROCK_ENABLE_OUTPUT_REASON=false
+AWS_BEDROCK_REASON_BUDGET_TOKENS=2048
+AWS_BEDROCK_ENABLE_COMPUTER_USE=false
+AWS_BEDROCK_DEBUG=false
 LOG_LEVEL=INFO
 ```
 

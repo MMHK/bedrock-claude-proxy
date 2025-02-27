@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>AWS Bedrock Claude Proxy</title>
+  <!-- 引入 Swagger UI 的 CSS 文件 -->
+  <link rel="stylesheet" type="text/css" href="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui.css" />
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui-bundle.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui-standalone-preset.js"></script>
+  <script>
+    // 读取 swagger.json 文件
+    fetch("./swagger.json")
+      .then(response => response.json())
+      .then(spec => {
+        const serverList = Array.from(spec.servers || []).map((server) => {
+          const currentHost = window.location.host;
+          let targetURL = new URL(server.url);
+          targetURL.host = currentHost;
+          return {
+            url: targetURL.toString(),
+          };
+        });
+
+        // 修改 servers URL
+        spec.servers = serverList;
+
+        // Swagger UI 配置
+        const ui = SwaggerUIBundle({
+          spec: spec,
+          dom_id: '#swagger-ui',
+          presets: [
+            SwaggerUIBundle.presets.apis,
+            SwaggerUIStandalonePreset
+          ],
+          layout: "StandaloneLayout"
+        });
+      })
+      .catch(error => {
+        console.error('Error loading swagger.json:', error);
+      });
+  </script>
+</body>
+</html>
