@@ -3,8 +3,9 @@ package pkg
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/gorilla/mux"
 	"net/http"
+
+	"github.com/gorilla/mux"
 )
 
 type HttpConfig struct {
@@ -14,8 +15,85 @@ type HttpConfig struct {
 }
 
 type HTTPService struct {
-	conf *Config
+	conf          *Config
 	bedrockClient *BedrockClient
+}
+
+type APIModelInfo struct {
+	CreatedAt   string `json:"created_at"`
+	DisplayName string `json:"display_name"`
+	ID          string `json:"id"`
+	Type        string `json:"type"`
+}
+
+type ListModelsResponse struct {
+	Data    []APIModelInfo `json:"data"`
+	FirstID string         `json:"first_id"`
+	HasMore bool           `json:"has_more"`
+	LastID  string         `json:"last_id"`
+}
+
+func (this *HTTPService) HandleListModels(writer http.ResponseWriter, request *http.Request) {
+	// Use the new merged model list that validates against Bedrock API
+	models, err := this.bedrockClient.GetMergedModelList()
+	if err != nil {
+		Log.Errorf("Failed to get merged model list: %v", err)
+		// Fall back to basic model list
+		models = this.bedrockClient.ListModels()
+	}
+
+	response := ListModelsResponse{
+		Data:    make([]APIModelInfo, 0, len(models)),
+		FirstID: "<string>", // You may need to implement logic to determine these values
+		HasMore: true,       // You may need to implement pagination logic
+		LastID:  "<string>", // You may need to implement logic to determine these values
+	}
+
+	for _, model := range models {
+		response.Data = append(response.Data, APIModelInfo{
+			CreatedAt:   "2025-02-19T00:00:00Z", // You may need to implement logic to get the actual creation date
+			DisplayName: model.Name,
+			ID:          model.ID,
+			Type:        "model",
+		})
+	}
+
+	this.ResponseJSON(response, writer)
+}
+
+func (this *HTTPService) HandleValidateModels(writer http.ResponseWriter, request *http.Request) {
+	// Get validation results from Bedrock client
+	validationResults, err := this.bedrockClient.ValidateModelMappings()
+	if err != nil {
+		this.ResponseError(fmt.Errorf("failed to validate models: %v", err), writer)
+		return
+	}
+
+	// Also get available models from Bedrock for additional info
+	availableModels, err := this.bedrockClient.GetBedrockAvailableModels()
+	if err != nil {
+		Log.Warningf("Failed to get available models: %v", err)
+	}
+
+	// Create response structure
+	response := map[string]interface{}{
+		"validation_results":   validationResults,
+		"total_configured":     len(validationResults),
+		"available_count":      0,
+		"unavailable_count":    0,
+		"bedrock_models_count": len(availableModels),
+	}
+
+	// Count available vs unavailable
+	for _, result := range validationResults {
+		if result.Available {
+			response["available_count"] = response["available_count"].(int) + 1
+		} else {
+			response["unavailable_count"] = response["unavailable_count"].(int) + 1
+		}
+	}
+
+	this.ResponseJSON(response, writer)
 }
 
 type APIError struct {
@@ -32,7 +110,7 @@ func NewHttpService(conf *Config) *HTTPService {
 	bedrock := NewBedrockClient(conf.BedrockConfig)
 
 	return &HTTPService{
-		conf: conf,
+		conf:          conf,
 		bedrockClient: bedrock,
 	}
 }
@@ -118,6 +196,8 @@ func (this *HTTPService) Start() {
 	apiRouter.Use(this.APIKeyMiddleware)
 
 	apiRouter.HandleFunc("/messages", this.HandleMessageComplete)
+	apiRouter.HandleFunc("/models", this.HandleListModels).Methods("GET")
+	apiRouter.HandleFunc("/models/validate", this.HandleValidateModels).Methods("GET")
 
 	rHandler.HandleFunc("/", this.RedirectSwagger)
 	rHandler.PathPrefix("/").Handler(http.StripPrefix("/",

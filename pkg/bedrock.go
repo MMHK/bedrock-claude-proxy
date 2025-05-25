@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"io"
 	"log"
 	"net/http"
@@ -19,6 +18,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 
 	"github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream"
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
@@ -37,7 +38,7 @@ type BedrockConfig struct {
 	EnableComputerUse        bool              `json:"enable_computer_use"`
 	EnableOutputReason       bool              `json:"enable_output_reasoning"`
 	ReasonBudgetTokens       int               `json:"reason_budget_tokens"`
-	DEBUG 					 bool              `json:"debug,omitempty"`
+	DEBUG                    bool              `json:"debug,omitempty"`
 }
 
 type ThinkingConfig struct {
@@ -74,7 +75,7 @@ func LoadBedrockConfigWithEnv() *BedrockConfig {
 		EnableComputerUse:        os.Getenv("AWS_BEDROCK_ENABLE_COMPUTER_USE") == "true",
 		EnableOutputReason:       os.Getenv("AWS_BEDROCK_ENABLE_OUTPUT_REASON") == "true",
 		ReasonBudgetTokens:       1024,
-		DEBUG: 					  os.Getenv("AWS_BEDROCK_DEBUG") == "true",
+		DEBUG:                    os.Getenv("AWS_BEDROCK_DEBUG") == "true",
 	}
 
 	budget := os.Getenv("AWS_BEDROCK_REASON_BUDGET_TOKENS")
@@ -84,13 +85,200 @@ func LoadBedrockConfigWithEnv() *BedrockConfig {
 		}
 	}
 
-
-	return config;
+	return config
 }
 
 type BedrockClient struct {
 	config *BedrockConfig
 	client *bedrockRuntime.Client
+}
+
+type ModelInfo struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	ID      string `json:"id"`
+}
+
+// BedrockFoundationModel represents a model from Bedrock API
+type BedrockFoundationModel struct {
+	ModelId                    string   `json:"modelId"`
+	ModelName                  string   `json:"modelName"`
+	ProviderName               string   `json:"providerName"`
+	InputModalities            []string `json:"inputModalities"`
+	OutputModalities           []string `json:"outputModalities"`
+	ResponseStreamingSupported bool     `json:"responseStreamingSupported"`
+}
+
+// BedrockModelsResponse represents the response from Bedrock foundation models API
+type BedrockModelsResponse struct {
+	ModelSummaries []BedrockFoundationModel `json:"modelSummaries"`
+}
+
+// ModelValidationResult represents the validation result for a model mapping
+type ModelValidationResult struct {
+	ConfigModel    string `json:"config_model"`
+	BedrockModelId string `json:"bedrock_model_id"`
+	ModelName      string `json:"model_name,omitempty"` // Optional, can be used to store the model name if available
+	IsValid        bool   `json:"is_valid"`
+	Available      bool   `json:"available"`
+}
+
+func (this *BedrockClient) ListModels() []ModelInfo {
+	models := make([]ModelInfo, 0, len(this.config.AnthropicVersionMappings))
+	for name, version := range this.config.AnthropicVersionMappings {
+		models = append(models, ModelInfo{ID: name, Version: version, Name: fmt.Sprintf("%s-%s", name, version)})
+	}
+	return models
+}
+
+// GetBedrockAvailableModels fetches available models from Bedrock API
+func (this *BedrockClient) GetBedrockAvailableModels() ([]BedrockFoundationModel, error) {
+	// Create the API endpoint URL - use bedrock service, not bedrock-runtime
+	apiEndpoint := fmt.Sprintf("https://bedrock.%s.amazonaws.com/foundation-models", this.config.Region)
+
+	// Create HTTP request
+	req, err := http.NewRequest("GET", apiEndpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %v", err)
+	}
+
+	// Set headers
+	req.Header.Set("Content-Type", "application/json")
+
+	// Sign the request using AWS v4 signature
+	cfg, err := awsConfig.LoadDefaultConfig(context.TODO(),
+		awsConfig.WithRegion(this.config.Region),
+		awsConfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+			this.config.AccessKey,
+			this.config.SecretKey,
+			"",
+		)),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load AWS config: %v", err)
+	}
+
+	signer := v4.NewSigner()
+	credentialList, err := cfg.Credentials.Retrieve(context.TODO())
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve credentials: %v", err)
+	}
+
+	// Sign the request
+	hash := sha256.Sum256([]byte{})
+	payloadHash := hex.EncodeToString(hash[:])
+	err = signer.SignHTTP(context.TODO(), credentialList, req, payloadHash, "bedrock", cfg.Region, time.Now(), func(options *v4.SignerOptions) {
+		if this.config.DEBUG {
+			options.LogSigning = true
+		}
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign request: %v", err)
+	}
+
+	// Execute the request
+	httpClient := http.DefaultClient
+	if this.config.DEBUG {
+		httpClient = &http.Client{
+			Transport: loggingRoundTripper{
+				wrapped: http.DefaultTransport,
+			},
+		}
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	// Parse the response
+	var modelsResponse BedrockModelsResponse
+	decoder := json.NewDecoder(resp.Body)
+	err = decoder.Decode(&modelsResponse)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode response: %v", err)
+	}
+
+	return modelsResponse.ModelSummaries, nil
+}
+
+// ValidateModelMappings validates the configured model mappings against available Bedrock models
+func (this *BedrockClient) ValidateModelMappings() ([]ModelValidationResult, error) {
+	// Get available models from Bedrock
+	availableModels, err := this.GetBedrockAvailableModels()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get available models: %v", err)
+	}
+
+	// Create a map for quick lookup
+	availableModelIds := make(map[string]string)
+	for _, model := range availableModels {
+		availableModelIds[model.ModelId] = model.ModelName
+	}
+
+	// Validate each mapping
+	var results []ModelValidationResult
+	for configModel, bedrockModelId := range this.config.ModelMappings {
+		modelName, ok := availableModelIds[bedrockModelId]
+		if ok {
+			results = append(results, ModelValidationResult{
+				ConfigModel:    configModel,
+				BedrockModelId: bedrockModelId,
+				IsValid:        ok,        // Mapping exists in config
+				ModelName:      modelName, // Optional, can be filled if needed
+				Available:      ok,
+			})
+		}
+	}
+
+	return results, nil
+}
+
+// GetMergedModelList returns a combined list of configured and available models
+func (this *BedrockClient) GetMergedModelList() ([]ModelInfo, error) {
+	// Get validation results
+	validationResults, err := this.ValidateModelMappings()
+	if err != nil {
+		Log.Errorf("Failed to validate model mappings: %v", err)
+		// Fall back to config-only models
+		return this.ListModels(), nil
+	}
+
+	Log.Debugf("Validation results: %v", validationResults)
+
+	// Create model list from validation results
+	var models []ModelInfo
+	for _, result := range validationResults {
+		if result.Available {
+			// Use the config model name and extract version from mapping
+			version := this.config.AnthropicDefaultVersion
+			if mappedVersion, ok := this.config.AnthropicVersionMappings[result.ConfigModel]; ok {
+				version = mappedVersion
+			}
+
+			models = append(models, ModelInfo{
+				Name:    result.ModelName,
+				Version: version,
+				ID:      result.ConfigModel,
+			})
+		} else {
+			Log.Warningf("Model %s (mapped to %s) is not available in Bedrock", result.ConfigModel, result.BedrockModelId)
+		}
+	}
+
+	// If no valid models found, fall back to config models
+	if len(models) == 0 {
+		Log.Warning("No valid models found from Bedrock API, falling back to config models")
+		return this.ListModels(), nil
+	}
+
+	return models, nil
 }
 
 // 自定义的 RoundTripper 用于记录请求和响应
@@ -124,7 +312,7 @@ func (l loggingRoundTripper) RoundTrip(req *http.Request) (*http.Response, error
 func NewBedrockClient(config *BedrockConfig) *BedrockClient {
 	staticProvider := credentials.NewStaticCredentialsProvider(config.AccessKey, config.SecretKey, "")
 
-	opt := []func(*awsConfig.LoadOptions)error {
+	opt := []func(*awsConfig.LoadOptions) error{
 		awsConfig.WithRegion(config.Region),
 		awsConfig.WithCredentialsProvider(staticProvider),
 	}
@@ -137,7 +325,6 @@ func NewBedrockClient(config *BedrockConfig) *BedrockClient {
 		}
 		opt = append(opt, awsConfig.WithHTTPClient(httpClient))
 	}
-
 
 	cfg, err := awsConfig.LoadDefaultConfig(context.TODO(), opt...)
 
@@ -220,7 +407,6 @@ func (this *BedrockClient) SignRequest(request *http.Request) (*http.Request, bo
 			return request, false, err
 		}
 
-
 		bodyBuff = *bytes.NewBuffer(newBody)
 
 		cloneReq = &http.Request{
@@ -246,7 +432,7 @@ func (this *BedrockClient) SignRequest(request *http.Request) (*http.Request, bo
 
 	bedrockRuntimeEndPoint := fmt.Sprintf(`https://bedrock-runtime.%s.amazonaws.com/model/%s/invoke`, this.config.Region, url.QueryEscape(Model))
 	if isStream {
-		bedrockRuntimeEndPoint = fmt.Sprintf(`https://bedrock-runtime.%s.amazonaws.com/model/%s/invoke-with-response-stream`, this.config.Region,url.QueryEscape(Model))
+		bedrockRuntimeEndPoint = fmt.Sprintf(`https://bedrock-runtime.%s.amazonaws.com/model/%s/invoke-with-response-stream`, this.config.Region, url.QueryEscape(Model))
 	}
 
 	preSignReq, err := http.NewRequest("POST", bedrockRuntimeEndPoint, cloneReq.Body)
@@ -283,8 +469,8 @@ func (this *BedrockClient) SignRequest(request *http.Request) (*http.Request, bo
 }
 
 type RawAWSBedrockEvent struct {
-	Bytes    string `json:"bytes"`
-	P        string `json:"p"`
+	Bytes string `json:"bytes"`
+	P     string `json:"p"`
 }
 
 func (this *RawAWSBedrockEvent) GetRawChunk() (string, string) {
@@ -376,7 +562,6 @@ func (this *BedrockClient) handleBedrockStream(w http.ResponseWriter, res *http.
 			Log.Infof("handleBedrockStreamRaw: %s\n", string(msg.Payload))
 		}
 
-
 		if isJSONEncoded {
 			// 查找事件类型和内容 (需要根据EventStream具体格式进一步解析)
 			// 简化示例: 假设数据是JSON格式
@@ -390,10 +575,8 @@ func (this *BedrockClient) handleBedrockStream(w http.ResponseWriter, res *http.
 		}
 	}
 
-
 	return nil
 }
-
 
 func (this *BedrockClient) HandleProxy(w http.ResponseWriter, r *http.Request) {
 	cloneReq, isStream, err := this.SignRequest(r)
@@ -430,7 +613,6 @@ func (this *BedrockClient) HandleProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
 	httpClient := http.DefaultClient
 	if this.config.DEBUG {
 		httpClient = &http.Client{
@@ -453,7 +635,7 @@ func (this *BedrockClient) HandleProxy(w http.ResponseWriter, r *http.Request) {
 		w.Header()[k] = v
 	}
 	w.WriteHeader(resp.StatusCode)
-	_,err = io.Copy(w, resp.Body)
+	_, err = io.Copy(w, resp.Body)
 	if err != nil {
 		Log.Error(err)
 	}
