@@ -4,3 +4,6 @@ tests
 .idea
 .env
 .env.example
+searxng
+*.md
+LICENSE

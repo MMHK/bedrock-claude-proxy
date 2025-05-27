@@ -1,4 +1,4 @@
-FROM golang:1.19-alpine as builder
+FROM golang:1.20-alpine as builder
 
 # Add Maintainer Info
 LABEL maintainer="Sam Zhou <sam@mixmedia.com>"
@@ -21,11 +21,10 @@ RUN go version \
 ######## Start a new stage from scratch #######
 FROM alpine:latest
 
-RUN apk add --update libintl \
-    && apk add --no-cache ca-certificates tzdata dumb-init \
-    && apk add --virtual build_deps gettext  \
-    && cp /usr/bin/envsubst /usr/local/bin/envsubst \
-    && apk del build_deps
+RUN apk add --no-cache ca-certificates tzdata dumb-init gettext-envsubst \
+    && update-ca-certificates \
+    && envsubst --version \
+    && rm -rf /var/cache/apk/*
 
 WORKDIR /app
 
@@ -41,9 +40,9 @@ ENV HTTP_LISTEN=0.0.0.0:3000 \
  AWS_BEDROCK_ACCESS_KEY= \
  AWS_BEDROCK_SECRET_KEY= \
  AWS_BEDROCK_REGION= \
- AWS_BEDROCK_MODEL_MAPPINGS="claude-instant-1.2=anthropic.claude-instant-v1,claude-2.0=anthropic.claude-v2,claude-2.1=anthropic.claude-v2:1,claude-3-sonnet-20240229=anthropic.claude-3-sonnet-20240229-v1:0,claude-3-opus-20240229=anthropic.claude-3-opus-20240229-v1:0,claude-3-haiku-20240307=anthropic.claude-3-haiku-20240307-v1:0" \
+ AWS_BEDROCK_MODEL_MAPPINGS="claude-3-5-sonnet-20240620=anthropic.claude-3-5-sonnet-20240620-v1:0,claude-3-5-sonnet-latest=anthropic.claude-3-5-sonnet-20241022-v2:0,claude-3-5-haiku-20241022=anthropic.claude-3-5-haiku-20241022-v1:0" \
  AWS_BEDROCK_ANTHROPIC_VERSION_MAPPINGS="2023-06-01=bedrock-2023-05-31" \
- AWS_BEDROCK_ANTHROPIC_DEFAULT_MODEL=anthropic.claude-v2 \
+ AWS_BEDROCK_ANTHROPIC_DEFAULT_MODEL="anthropic.claude-3-5-haiku-20241022-v1:0" \
  AWS_BEDROCK_ANTHROPIC_DEFAULT_VERSION=bedrock-2023-05-31 \
  AWS_BEDROCK_ENABLE_OUTPUT_REASON=false \
  AWS_BEDROCK_REASON_BUDGET_TOKENS=1024 \

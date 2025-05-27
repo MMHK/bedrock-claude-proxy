@@ -1,22 +1,29 @@
 package pkg
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 
 	"github.com/gorilla/mux"
 )
 
 type HttpConfig struct {
-	Listen  string `json:"listen,omitempty"`
-	WebRoot string `json:"web_root,omitempty"`
-	APIKey  string `json:"api_key,omitempty"`
+	Listen   string `json:"listen,omitempty"`
+	WebRoot  string `json:"web_root,omitempty"`
+	APIKey   string `json:"api_key,omitempty"`
+	ZohoAuth bool   `json:"zoho_auth,omitempty"`
 }
 
 type HTTPService struct {
 	conf          *Config
 	bedrockClient *BedrockClient
+	zohoAuth      *ZohoOAuth
+	apiKeyUsers   map[string]string // API key -> email mapping
+	apiKeysMutex  sync.RWMutex
 }
 
 type APIModelInfo struct {
@@ -44,9 +51,9 @@ func (this *HTTPService) HandleListModels(writer http.ResponseWriter, request *h
 
 	response := ListModelsResponse{
 		Data:    make([]APIModelInfo, 0, len(models)),
-		FirstID: "<string>", // You may need to implement logic to determine these values
-		HasMore: true,       // You may need to implement pagination logic
-		LastID:  "<string>", // You may need to implement logic to determine these values
+		FirstID: "",    // You may need to implement logic to determine these values
+		HasMore: false, // You may need to implement pagination logic
+		LastID:  "",    // You may need to implement logic to determine these values
 	}
 
 	for _, model := range models {
@@ -56,41 +63,6 @@ func (this *HTTPService) HandleListModels(writer http.ResponseWriter, request *h
 			ID:          model.ID,
 			Type:        "model",
 		})
-	}
-
-	this.ResponseJSON(response, writer)
-}
-
-func (this *HTTPService) HandleValidateModels(writer http.ResponseWriter, request *http.Request) {
-	// Get validation results from Bedrock client
-	validationResults, err := this.bedrockClient.ValidateModelMappings()
-	if err != nil {
-		this.ResponseError(fmt.Errorf("failed to validate models: %v", err), writer)
-		return
-	}
-
-	// Also get available models from Bedrock for additional info
-	availableModels, err := this.bedrockClient.GetBedrockAvailableModels()
-	if err != nil {
-		Log.Warningf("Failed to get available models: %v", err)
-	}
-
-	// Create response structure
-	response := map[string]interface{}{
-		"validation_results":   validationResults,
-		"total_configured":     len(validationResults),
-		"available_count":      0,
-		"unavailable_count":    0,
-		"bedrock_models_count": len(availableModels),
-	}
-
-	// Count available vs unavailable
-	for _, result := range validationResults {
-		if result.Available {
-			response["available_count"] = response["available_count"].(int) + 1
-		} else {
-			response["unavailable_count"] = response["unavailable_count"].(int) + 1
-		}
 	}
 
 	this.ResponseJSON(response, writer)
@@ -108,11 +80,80 @@ type APIStandardError struct {
 
 func NewHttpService(conf *Config) *HTTPService {
 	bedrock := NewBedrockClient(conf.BedrockConfig)
+	zohoConfig := LoadZohoConfigFromEnv()
 
 	return &HTTPService{
 		conf:          conf,
 		bedrockClient: bedrock,
+		zohoAuth:      NewZohoOAuth(zohoConfig),
+		apiKeyUsers:   make(map[string]string),
 	}
+}
+
+func (this *HTTPService) generateAPIKey() (string, error) {
+	bytes := make([]byte, 32)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return base64.URLEncoding.EncodeToString(bytes), nil
+}
+
+func (z *HTTPService) buildRedirectURIFromRequest(r *http.Request) string {
+	scheme := "http"
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+
+	host := r.Host
+	if forwardedHost := r.Header.Get("X-Forwarded-Host"); forwardedHost != "" {
+		host = forwardedHost
+	}
+
+	return fmt.Sprintf("%s://%s/auth/callback", scheme, host)
+}
+
+func (this *HTTPService) HandleAuth(writer http.ResponseWriter, request *http.Request) {
+	redirectURL := this.zohoAuth.GetAuthRedirectURLCustom(this.buildRedirectURIFromRequest(request))
+	http.Redirect(writer, request, redirectURL, http.StatusTemporaryRedirect)
+}
+
+func (this *HTTPService) HandleAuthCallback(writer http.ResponseWriter, request *http.Request) {
+	code := request.URL.Query().Get("code")
+	if code == "" {
+		this.ResponseError(fmt.Errorf("missing authorization code"), writer)
+		return
+	}
+
+	email, err := this.zohoAuth.GetEmailCustom(code, this.buildRedirectURIFromRequest(request))
+	if err != nil {
+		this.ResponseError(fmt.Errorf("failed to get email: %v", err), writer)
+		return
+	}
+
+	if !this.zohoAuth.IsEmailDomainAllowed(email) {
+		this.ResponseError(fmt.Errorf("email domain not allowed"), writer)
+		return
+	}
+
+	apiKey, err := this.generateAPIKey()
+	if err != nil {
+		this.ResponseError(fmt.Errorf("failed to generate API key"), writer)
+		return
+	}
+
+	this.apiKeysMutex.Lock()
+	this.apiKeyUsers[apiKey] = email
+	this.apiKeysMutex.Unlock()
+
+	response := struct {
+		APIKey string `json:"api_key"`
+		Email  string `json:"email"`
+	}{
+		APIKey: apiKey,
+		Email:  email,
+	}
+
+	this.ResponseJSON(response, writer)
 }
 
 func (this *HTTPService) RedirectSwagger(writer http.ResponseWriter, request *http.Request) {
@@ -191,13 +232,16 @@ func (this *HTTPService) APIKeyMiddleware(next http.Handler) http.Handler {
 func (this *HTTPService) Start() {
 	rHandler := mux.NewRouter()
 
+	// Add auth routes
+	rHandler.HandleFunc("/auth", this.HandleAuth)
+	rHandler.HandleFunc("/auth/callback", this.HandleAuthCallback)
+
 	// 需要 API Key 的路由
 	apiRouter := rHandler.PathPrefix("/v1").Subrouter()
 	apiRouter.Use(this.APIKeyMiddleware)
 
 	apiRouter.HandleFunc("/messages", this.HandleMessageComplete)
 	apiRouter.HandleFunc("/models", this.HandleListModels).Methods("GET")
-	apiRouter.HandleFunc("/models/validate", this.HandleValidateModels).Methods("GET")
 
 	rHandler.HandleFunc("/", this.RedirectSwagger)
 	rHandler.PathPrefix("/").Handler(http.StripPrefix("/",

@@ -88,6 +88,50 @@
           }
         }
       }
+    },
+    "/v1/models": {
+      "get": {
+        "summary": "List available Claude models",
+        "description": "Returns a list of Claude models that can be used with the Messages API.",
+        "operationId": "listModels",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of available models",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing API key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -223,43 +267,43 @@
                   "example": "Hi there! I'm here to help you with any questions."
                 }
               }
-            }
-          },
-          "thinking": {
-            "type": "object",
-            "description": "Optional thinking trace showing Claude's reasoning process (returned if include_thinking is true).",
-            "properties": {
-              "trace": {
-                "type": "string",
-                "description": "A detailed log of the model's thought process before arriving at the final response.",
-                "example": "Let's break this down step-by-step. First, the user asked for assistance. Given the context, a friendly greeting seems appropriate..."
+            },
+            "thinking": {
+              "type": "object",
+              "description": "Optional thinking trace showing Claude's reasoning process (returned if include_thinking is true).",
+              "properties": {
+                "trace": {
+                  "type": "string",
+                  "description": "A detailed log of the model's thought process before arriving at the final response.",
+                  "example": "Let's break this down step-by-step. First, the user asked for assistance. Given the context, a friendly greeting seems appropriate..."
+                }
+              },
+              "nullable": true
+            },
+            "usage": {
+              "type": "object",
+              "properties": {
+                "input_tokens": {
+                  "type": "integer",
+                  "example": 10
+                },
+                "output_tokens": {
+                  "type": "integer",
+                  "example": 15
+                },
+                "thinking_tokens": {
+                  "type": "integer",
+                  "description": "Tokens used for the thinking trace, if included.",
+                  "example": 50,
+                  "nullable": true
+                }
               }
             },
-            "nullable": true
-          },
-          "usage": {
-            "type": "object",
-            "properties": {
-              "input_tokens": {
-                "type": "integer",
-                "example": 10
-              },
-              "output_tokens": {
-                "type": "integer",
-                "example": 15
-              },
-              "thinking_tokens": {
-                "type": "integer",
-                "description": "Tokens used for the thinking trace, if included.",
-                "example": 50,
-                "nullable": true
-              }
+            "stop_reason": {
+              "type": "string",
+              "description": "Reason the model stopped generating (e.g., max_tokens, stop_sequence).",
+              "example": "max_tokens"
             }
-          },
-          "stop_reason": {
-            "type": "string",
-            "description": "Reason the model stopped generating (e.g., max_tokens, stop_sequence).",
-            "example": "max_tokens"
           }
         }
       },
@@ -278,6 +322,55 @@
                 "example": "Invalid parameter provided"
               }
             }
+          }
+        }
+      },
+      "ModelList": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Model"
+            }
+          },
+          "first_id": {
+            "type": "string",
+            "description": "ID of the first model in the list"
+          },
+          "has_more": {
+            "type": "boolean",
+            "description": "Whether there are more models available"
+          },
+          "last_id": {
+            "type": "string",
+            "description": "ID of the last model in the list"
+          }
+        }
+      },
+      "Model": {
+        "type": "object",
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The timestamp when the model was created",
+            "example": "2025-02-19T00:00:00Z"
+          },
+          "display_name": {
+            "type": "string",
+            "description": "Human-readable name of the model",
+            "example": "Claude 3.7 Sonnet"
+          },
+          "id": {
+            "type": "string",
+            "description": "The model identifier",
+            "example": "claude-3-7-sonnet-20250219"
+          },
+          "type": {
+            "type": "string",
+            "description": "Type of the resource, always 'model'",
+            "example": "model"
           }
         }
       }

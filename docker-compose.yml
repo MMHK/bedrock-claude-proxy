@@ -1,27 +1,39 @@
-version: '3'
+version: '3.8'
 services:
+  build-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      platforms: 
+        - "linux/amd64"
+    image: "mmhk/bedrock-claude-proxy"
+
   bedrock-claude-proxy:
     image: "mmhk/bedrock-claude-proxy"
     restart: always
     environment:
-      API_KEY: "your-api-key"
+      API_KEY: "${API_KEY}"
       AWS_BEDROCK_ACCESS_KEY: "${AWS_BEDROCK_ACCESS_KEY}"
       AWS_BEDROCK_SECRET_KEY: "${AWS_BEDROCK_SECRET_KEY}"
-      AWS_BEDROCK_REGION: "us-east-1"
+      AWS_BEDROCK_REGION: "${AWS_BEDROCK_REGION}"
       AWS_BEDROCK_MODEL_MAPPINGS: "${AWS_BEDROCK_MODEL_MAPPINGS}"
+      AWS_BEDROCK_DEBUG: true
+      LOG_LEVEL: DEBUG
     ports:
-      - "3000:3000"
+      - "3010:3000"
+
+  searxng:
+    image: docker.io/searxng/searxng:latest
+    volumes:
+      - ./searxng:/etc/searxng:rw
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+
   chatgpt-next:
-    image: "yidadaa/chatgpt-next-web"
+    image: "mmhk/chatgpt-next-web"
     restart: always
-    environment:
-      DEFAULT_MODEL: "claude-2.1"
-      DISABLE_GPT4: 1
-      HIDE_USER_API_KEY: 1
-      DISABLE_FAST_LINK: 1
-      ANTHROPIC_URL: "http://bedrock-claude-proxy:3000"
-      ANTHROPIC_API_KEY: "your-api-key"
-      ANTHROPIC_API_VERSION: "2023-06-01"
-      CUSTOM_MODELS: "-all,+claude-2.1=claude-2.1(AWS bedrock),+claude-3-sonnet-20240229=claude-3.5-sonnet(AWS bedrock)"
+    env_file:
+      - .env
     ports:
-      - "4001:3000"
+      - "4002:3000"

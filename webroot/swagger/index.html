@@ -17,8 +17,10 @@
       .then(spec => {
         const serverList = Array.from(spec.servers || []).map((server) => {
           const currentHost = window.location.host;
+          const protocol = window.location.protocol.replace(':', '');
           let targetURL = new URL(server.url);
           targetURL.host = currentHost;
+          targetURL.protocol = protocol;
           return {
             url: targetURL.toString(),
           };
