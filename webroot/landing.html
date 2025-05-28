@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AWS Bedrock Claude Proxy</title>
+    <style>
+        :root {
+            --primary-color: #0066cc;
+            --secondary-color: #004080;
+            --bg-color: #f5f8fa;
+            --text-color: #333;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            line-height: 1.6;
+            color: var(--text-color);
+            background: var(--bg-color);
+        }
+
+        header {
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            color: white;
+            padding: 4rem 2rem;
+            text-align: center;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .badges {
+            margin: 1rem 0;
+        }
+
+        .badges img {
+            margin: 0.25rem;
+        }
+
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin: 3rem 0;
+        }
+
+        .feature-card {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            transition: transform 0.2s;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .api-section {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            margin: 2rem 0;
+        }
+
+        .code-block {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 1rem;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            margin: 1rem 0;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 0.8rem 1.5rem;
+            background: var(--primary-color);
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            margin: 1rem 0;
+            transition: background 0.2s;
+        }
+
+        .btn:hover {
+            background: var(--secondary-color);
+        }
+
+        footer {
+            background: #333;
+            color: white;
+            text-align: center;
+            padding: 2rem;
+            margin-top: 4rem;
+        }
+
+        /* API Key section styles */
+        .api-key-section {
+            background: white;
+            padding: 3rem;
+            border-radius: 12px;
+            margin: 2rem 0;
+            text-align: center;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .api-key-container {
+            margin: 2rem auto;
+            max-width: 700px;
+            background: var(--bg-color);
+            padding: 1.5rem;
+            border-radius: 8px;
+            display: none;
+        }
+
+        .api-key-container.visible {
+            display: block;
+        }
+
+        .api-key-item {
+            margin: 1rem 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+
+        .api-key-value {
+            font-family: 'Courier New', monospace;
+            background: #fff;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            flex-grow: 1;
+            word-break: break-all;
+        }
+
+        .copy-btn {
+            background: var(--secondary-color);
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .copy-btn:hover {
+            background: var(--primary-color);
+        }
+
+        @media (min-width: 769px) {
+            .api-key-item > strong {
+                width: 100px;
+                text-align: right;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .features {
+                grid-template-columns: 1fr;
+            }
+
+            .api-key-container {
+                max-width: 100%;
+                padding: 1rem;
+            }
+
+            .api-key-item {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .copy-btn {
+                width: 100%;
+            }
+
+            .api-key-value {
+                margin-top: 0.5rem;
+                text-align: left;
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>AWS Bedrock Claude Proxy</h1>
+        <p>提供 AWS Bedrock 和 Anthropic API 整合的无缝代理服務</p>
+        <div class="badges">
+            <img src="https://goreportcard.com/badge/github.com/mmhk/bedrock-claude-proxy" alt="Go Report Card">
+            <img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License">
+            <img src="https://img.shields.io/docker/pulls/mmhk/bedrock-claude-proxy" alt="Docker Pulls">
+            <img src="https://img.shields.io/github/issues/mmhk/bedrock-claude-proxy" alt="GitHub issues">
+        </div>
+        <!-- 新增 Swagger 入口按钮 -->
+        <a href="/swagger/" target="_blank" class="btn">查看 Swagger 文档</a>
+        <a href="https://github.com/MMHK/bedrock-claude-proxy" class="btn">查看 GitHub</a>
+    </header>
+
+    <main class="container">
+        <section class="api-key-section">
+            <h2>取得您的 API 密鑰</h2>
+            <p>使用您的帳戶進行身份驗證以開始使用 Claude Proxy。</p>
+            <div id="authSection">
+                <p>點擊下方進行身份驗證並取得您的 API Key：</p>
+                <a href="javascript:void(0)" onclick="createAuthPopup()" class="btn">Connect with Zoho</a>
+            </div>
+            <div id="apiKeyContainer" class="api-key-container">
+                <div class="api-key-item">
+                    <strong>EndPoint：</strong>
+                    <div class="api-key-value" id="apiKeyEndPoint"></div>
+                    <button class="copy-btn" onclick="copyToClipboard(this, document.querySelector('#apiKeyEndPoint'))">
+                        Copy
+                    </button>
+                </div>
+                <div class="api-key-item">
+                    <strong>API Key：</strong>
+                    <div class="api-key-value" id="apiKeyText"></div>
+                    <button class="copy-btn" onclick="copyToClipboard(this, document.querySelector('#apiKeyText'))">
+                        Copy
+                    </button>
+                </div>
+                <div class="api-key-item">
+                    <strong>Email：</strong>
+                    <div class="api-key-value" id="userEmail"></div>
+                </div>
+                <div class="api-key-item">
+                    <strong>過期時間：</strong>
+                    <div class="api-key-value" id="expiryTime"></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="features">
+            <div class="feature-card">
+                <h3>💫 無縫 API 轉換</h3>
+                <p>將 AWS Bedrock API 呼叫轉換為 Anthropic API 格式，反之亦然，無需任何摩擦。</p>
+            </div>
+            <div class="feature-card">
+                <h3>🔒 增強安全性</h3>
+                <p>使用 Zoho 身份驗證支持，確保客戶與 AWS Bedrock 之間的通信安全。</p>
+            </div>
+            <div class="feature-card">
+                <h3>⚡ 高性能</h3>
+                <p>高效處理大量請求，具有緩存功能的設計。</p>
+            </div>
+            <div class="feature-card">
+                <h3>🐳 Docker 就緒</h3>
+                <p>使用 Docker 和 Docker Compose 部署，提供預建映像。</p>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>遵循 Apache 2.0 授權 • <a href="https://github.com/MMHK/bedrock-claude-proxy" style="color: white;">GitHub</a></p>
+    </footer>
+
+    <script>
+        function createAuthPopup() {
+            const popup = window.open('/auth', 'Auth Window', 
+                'width=600,height=600,left=' + (window.innerWidth - 600)/2 + 
+                ',top=' + (window.innerHeight - 600)/2);
+            
+            const checkPopup = setInterval(() => {
+                try {
+                    if (!popup || popup.closed) {
+                        clearInterval(checkPopup);
+                        return;
+                    }
+
+                    // Try to access popup content
+                    const popupDoc = popup.document;
+                    try {
+                        // Try to parse JSON from popup document body
+                        const data = JSON.parse(popupDoc.body.textContent);
+                        if (data.api_key && data.email && data.expired_at) {
+                            clearInterval(checkPopup);
+                            displayApiDetails(data);
+                            popup.close();
+                        }
+                    } catch (jsonError) {
+                        // Not valid JSON yet, keep polling
+                    }
+                } catch (e) {
+                    // Cross-origin error, ignore
+                    if (!e.toString().includes('cross-origin')) {
+                        console.error('Popup error:', e);
+                        clearInterval(checkPopup);
+                    }
+                }
+            }, 500);
+        }
+
+        function displayApiDetails(data) {
+            document.getElementById('authSection').style.display = 'none';
+            document.getElementById('apiKeyContainer').classList.add('visible');
+            
+            document.getElementById('apiKeyText').textContent = data.api_key;
+            document.getElementById('userEmail').textContent = data.email;
+            
+            const expiryDate = new Date(parseInt(data.expired_at) * 1000);
+            document.getElementById('expiryTime').textContent = expiryDate.toLocaleString();
+
+            document.querySelector("#apiKeyEndPoint").textContent = `${location.protocol}//${location.host}/`;
+        }
+
+        function copyToClipboard(btn, target) {
+            const text = target.textContent;
+            navigator.clipboard.writeText(text)
+                .then(() => {
+                    const originalText = btn.textContent;
+                    btn.textContent = 'Copped!';
+                    setTimeout(() => {
+                        btn.textContent = originalText;
+                    }, 2000);
+                })
+                .catch(err => console.error('複製失敗：', err));
+        }
+    </script>
+</body>
+</html>

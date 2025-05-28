@@ -129,7 +129,6 @@ type ZohoConfig struct {
 	Scopes       []string
 	AllowDomains []string
 	RedirectURI  string
-	DBPath       string // Add DBPath field
 }
 
 // 從環境變數載入 ZohoConfig
@@ -152,7 +151,6 @@ func LoadZohoConfigFromEnv() ZohoConfig {
 		Scopes:       scopes,
 		AllowDomains: allowDomains,
 		RedirectURI:  os.Getenv("ZOHO_REDIRECT_URI"),
-		DBPath:       os.Getenv("ZOHO_DB_PATH"),
 	}
 }
 

@@ -27,7 +27,7 @@ Welcome to the `AWS Bedrock Claude Proxy` project! This project provides a seaml
 Before you begin, ensure you have met the following requirements:
 
 - You have an AWS account with access to AWS Bedrock.
-- You have Go installed on your local machine (version 1.19 or higher).
+- You have Go installed on your local machine (version 1.20 or higher).
 - You have Docker installed on your local machine (optional, but recommended).
 - You have a basic understanding of REST APIs.
 
@@ -66,6 +66,17 @@ Before you begin, ensure you have met the following requirements:
     AWS_BEDROCK_ENABLE_COMPUTER_USE=false
     AWS_BEDROCK_DEBUG=false
     LOG_LEVEL=INFO
+
+    # Cache config
+    CACHE_DB_PATH=/path/to/cache.db
+    CACHE_BUCKET_NAME=claude-proxy-cache
+    CACHE_DEFAULT_EXPIRY_HOURS=1
+
+    # Zoho Auth Config
+    ZOHO_ALLOW_DOMAINS=domain.com
+    ZOHO_CLIENT_ID=your_zoho_client_id
+    ZOHO_CLIENT_SECRET=your_zoho_client_secret
+    ZOHO_REDIRECT_URI=https://your-domain/oauth/callback
     ```
 
 ## Usage
@@ -134,6 +145,21 @@ Before you begin, ensure you have met the following requirements:
 - `AWS_BEDROCK_DEBUG`: Enable debug mode.
 - `LOG_LEVEL`: The logging level (e.g., `INFO`, `DEBUG`, `ERROR`).
 
+### Cache Configuration
+- `CACHE_DB_PATH`: Path to the cache database file
+- `CACHE_BUCKET_NAME`: Name of the cache bucket (default: claude-proxy-cache)
+- `CACHE_DEFAULT_EXPIRY_HOURS`: Default cache expiry time in hours (default: 1)
+
+### Zoho Authentication
+The proxy supports Zoho authentication for enhanced security. To enable Zoho authentication:
+
+1. Configure your Zoho application settings in the Zoho Developer Console
+2. Set the following environment variables:
+   - `ZOHO_ALLOW_DOMAINS`: Comma-separated list of allowed email domains (e.g., mixmedia.com)
+   - `ZOHO_CLIENT_ID`: Your Zoho application client ID
+   - `ZOHO_CLIENT_SECRET`: Your Zoho application client secret
+   - `ZOHO_REDIRECT_URI`: The OAuth redirect URI for your application
+
 ## Contributing
 
 We welcome contributions! Please read our [Contributing Guide](CONTRIBUTING.md) to learn how you can help.
@@ -148,18 +174,18 @@ Thank you for using `AWS Bedrock Claude Proxy`. We hope it makes your integratio
 
 ---
 
-# AWS Bedrock Claude 代理
+# AWS Bedrock Claude Proxy
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/mmhk/bedrock-claude-proxy)](https://goreportcard.com/report/github.com/mmhk/bedrock-claude-proxy)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Docker Pulls](https://img.shields.io/docker/pulls/mmhk/bedrock-claude-proxy)](https://hub.docker.com/r/mmhk/bedrock-claude-proxy)
 [![GitHub issues](https://img.shields.io/github/issues/mmhk/bedrock-claude-proxy)](https://github.com/mmhk/bedrock-claude-proxy/issues)
 
-欢迎使用 `AWS Bedrock Claude 代理`项目！本项目旨在提供一个无缝的代理服务，将 AWS Bedrock API 调用转换为官方 Anthropic API 使用的格式，使支持官方 API 的客户端更容易与 AWS Bedrock 集成。
+欢迎使用 `AWS Bedrock Claude Proxy`项目！本项目旨在提供一个无缝的代理服务，将 AWS Bedrock API 调用转换为官方 Anthropic API 使用的格式，使支持官方 API 的客户端更容易与 AWS Bedrock 集成。
 
 ## 简介
 
-`AWS Bedrock Claude 代理`被设计为 AWS Bedrock 和为与官方 Anthropic API 交互而构建的客户端之间的中介。通过使用此代理，开发人员可以利用 AWS Bedrock 的强大基础设施，同时保持与现有 Anthropic 应用程序的兼容性。
+`AWS Bedrock Claude Proxy`被设计为 AWS Bedrock 和为与官方 Anthropic API 交互而构建的客户端之间的中介。通过使用此代理，开发人员可以利用 AWS Bedrock 的强大基础设施，同时保持与现有 Anthropic 应用程序的兼容性。
 
 ## 特性
 
@@ -177,7 +203,7 @@ Thank you for using `AWS Bedrock Claude Proxy`. We hope it makes your integratio
 在开始之前，请确保您满足以下要求：
 
 - 您拥有可访问 AWS Bedrock 的 AWS 账户。
-- 您的本地机器上安装了 Go（版本 1.19 或更高）。
+- 您的本地机器上安装了 Go（版本 1.20 或更高）。
 - 您的本地机器上安装了 Docker（可选，但推荐）。
 - 您对 REST API 有基本的了解。
 
@@ -216,6 +242,17 @@ Thank you for using `AWS Bedrock Claude Proxy`. We hope it makes your integratio
     AWS_BEDROCK_ENABLE_COMPUTER_USE=false
     AWS_BEDROCK_DEBUG=false
     LOG_LEVEL=INFO
+
+    # 快取配置
+    CACHE_DB_PATH=/path/to/cache.db
+    CACHE_BUCKET_NAME=claude-proxy-cache
+    CACHE_DEFAULT_EXPIRY_HOURS=1
+
+    # Zoho 認證配置
+    ZOHO_ALLOW_DOMAINS=domain.com
+    ZOHO_CLIENT_ID=your_zoho_client_id
+    ZOHO_CLIENT_SECRET=your_zoho_client_secret
+    ZOHO_REDIRECT_URI=https://your-domain/oauth/callback
     ```
 
 ## 使用方法
@@ -284,9 +321,20 @@ Thank you for using `AWS Bedrock Claude Proxy`. We hope it makes your integratio
 - `AWS_BEDROCK_DEBUG`：启用调试模式。
 - `LOG_LEVEL`：日志级别（例如，`INFO`、`DEBUG`、`ERROR`）。
 
-## 贡献
+### 快取配置
+- `CACHE_DB_PATH`：快取資料庫檔案路徑
+- `CACHE_BUCKET_NAME`：快取儲存桶名稱（預設：claude-proxy-cache）
+- `CACHE_DEFAULT_EXPIRY_HOURS`：預設快取過期時間（小時，預設：1）
 
-我们欢迎贡献！请阅读我们的[贡献指南](CONTRIBUTING.md)以了解如何提供帮助。
+### Zoho 認證
+代理支援 Zoho 認證以提升安全性。要啟用 Zoho 認證，請：
+
+1. 在 Zoho 開發者控制台中配置您的應用程式設定
+2. 設定以下環境變數：
+   - `ZOHO_ALLOW_DOMAINS`：允許的電子郵件網域列表（以逗號分隔，如：domain.com）
+   - `ZOHO_CLIENT_ID`：您的 Zoho 應用程式客戶端 ID
+   - `ZOHO_CLIENT_SECRET`：您的 Zoho 應用程式客戶端密鑰
+   - `ZOHO_REDIRECT_URI`：應用程式的 OAuth 重導向 URI
 
 ## 许可证
 

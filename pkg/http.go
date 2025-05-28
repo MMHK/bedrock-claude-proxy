@@ -1,13 +1,13 @@
 package pkg
 
 import (
-	"crypto/rand"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"sync"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 )
 
@@ -22,7 +22,7 @@ type HTTPService struct {
 	conf          *Config
 	bedrockClient *BedrockClient
 	zohoAuth      *ZohoOAuth
-	apiKeyUsers   map[string]string // API key -> email mapping
+	ApiStorage    APIKeyStore
 	apiKeysMutex  sync.RWMutex
 }
 
@@ -81,21 +81,24 @@ type APIStandardError struct {
 func NewHttpService(conf *Config) *HTTPService {
 	bedrock := NewBedrockClient(conf.BedrockConfig)
 	zohoConfig := LoadZohoConfigFromEnv()
+	var cache APIKeyStore
+	cache, err := NewCache()
+	if err != nil {
+		Log.Errorf("Failed to create cache: %v", err)
+		cache = NewMemoryStore(24 * time.Hour) // Fallback to in-memory store if cache creation fails
+	}
 
 	return &HTTPService{
 		conf:          conf,
 		bedrockClient: bedrock,
 		zohoAuth:      NewZohoOAuth(zohoConfig),
-		apiKeyUsers:   make(map[string]string),
+		ApiStorage:    cache,
 	}
 }
 
-func (this *HTTPService) generateAPIKey() (string, error) {
-	bytes := make([]byte, 32)
-	if _, err := rand.Read(bytes); err != nil {
-		return "", err
-	}
-	return base64.URLEncoding.EncodeToString(bytes), nil
+func (this *HTTPService) generateAPIKey() string {
+	id := uuid.New()
+	return id.String()
 }
 
 func (z *HTTPService) buildRedirectURIFromRequest(r *http.Request) string {
@@ -135,22 +138,60 @@ func (this *HTTPService) HandleAuthCallback(writer http.ResponseWriter, request 
 		return
 	}
 
-	apiKey, err := this.generateAPIKey()
-	if err != nil {
-		this.ResponseError(fmt.Errorf("failed to generate API key"), writer)
-		return
+	type ExistApiKey struct {
+		APIKey    string `json:"api_key"`
+		Email     string `json:"email"`
+		ExpiredAt int64  `json:"expired_at,omitempty"`
 	}
 
+	emailExist, err := this.ApiStorage.HasAPIKey(email)
+	if err == nil && emailExist {
+		apiKeyJSON, err := this.ApiStorage.GetAPIKey(email)
+		if err == nil {
+			var existApiKey ExistApiKey
+			err := json.Unmarshal([]byte(apiKeyJSON), &existApiKey)
+			if err == nil {
+				response := ExistApiKey{
+					APIKey:    existApiKey.APIKey,
+					Email:     existApiKey.Email,
+					ExpiredAt: existApiKey.ExpiredAt,
+				}
+
+				this.ResponseJSON(response, writer)
+				return
+			}
+
+		}
+	}
+
+	apiKey := this.generateAPIKey()
+
 	this.apiKeysMutex.Lock()
-	this.apiKeyUsers[apiKey] = email
+	err = this.ApiStorage.SaveAPIKey(apiKey, email, 24*time.Hour)
+	if err != nil {
+		this.ResponseError(fmt.Errorf("failed to save API key: %v", err), writer)
+		return
+	}
+	keyRecordsBin, err := json.Marshal(ExistApiKey{
+		APIKey:    apiKey,
+		Email:     email,
+		ExpiredAt: time.Now().Add(24 * time.Hour).Unix(),
+	})
+	if err != nil {
+		this.ResponseError(fmt.Errorf("failed to marshal API key record: %v", err), writer)
+		return
+	}
+	err = this.ApiStorage.SaveAPIKey(email, string(keyRecordsBin), 24*time.Hour)
+	if err != nil {
+		this.ResponseError(fmt.Errorf("failed to save API key: %v", err), writer)
+		return
+	}
 	this.apiKeysMutex.Unlock()
 
-	response := struct {
-		APIKey string `json:"api_key"`
-		Email  string `json:"email"`
-	}{
-		APIKey: apiKey,
-		Email:  email,
+	response := ExistApiKey{
+		APIKey:    apiKey,
+		Email:     email,
+		ExpiredAt: time.Now().Add(24 * time.Hour).Unix(),
 	}
 
 	this.ResponseJSON(response, writer)
@@ -158,6 +199,10 @@ func (this *HTTPService) HandleAuthCallback(writer http.ResponseWriter, request 
 
 func (this *HTTPService) RedirectSwagger(writer http.ResponseWriter, request *http.Request) {
 	http.Redirect(writer, request, "/swagger/", 301)
+}
+
+func (this *HTTPService) RedirectLanding(writer http.ResponseWriter, request *http.Request) {
+	http.Redirect(writer, request, "/landing.html", 301)
 }
 
 func (this *HTTPService) NotFoundHandle(writer http.ResponseWriter, request *http.Request) {
@@ -219,8 +264,14 @@ func (this *HTTPService) APIKeyMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
+		userApiKeyExist, err := this.ApiStorage.HasAPIKey(apiKey)
+		if err != nil {
+			Log.Errorf("Failed to check API key existence: %v", err)
+			userApiKeyExist = false
+		}
+
 		// 这里可以添加更多的 API Key 验证逻辑
-		if apiKey != APIKey {
+		if apiKey != APIKey && !userApiKeyExist {
 			this.ResponseError(fmt.Errorf("Invalid API key"), writer)
 			return
 		}
@@ -231,6 +282,8 @@ func (this *HTTPService) APIKeyMiddleware(next http.Handler) http.Handler {
 
 func (this *HTTPService) Start() {
 	rHandler := mux.NewRouter()
+
+	defer this.ApiStorage.Close()
 
 	// Add auth routes
 	rHandler.HandleFunc("/auth", this.HandleAuth)
@@ -243,7 +296,7 @@ func (this *HTTPService) Start() {
 	apiRouter.HandleFunc("/messages", this.HandleMessageComplete)
 	apiRouter.HandleFunc("/models", this.HandleListModels).Methods("GET")
 
-	rHandler.HandleFunc("/", this.RedirectSwagger)
+	rHandler.HandleFunc("/", this.RedirectLanding)
 	rHandler.PathPrefix("/").Handler(http.StripPrefix("/",
 		http.FileServer(http.Dir(fmt.Sprintf("%s", this.conf.WebRoot)))))
 	rHandler.NotFoundHandler = http.HandlerFunc(this.NotFoundHandle)

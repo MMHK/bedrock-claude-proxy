@@ -32,3 +32,4 @@ go.work
 /.pnp.cjs
 /searxng
 /tests/langchain/.idea
+/cache.db
