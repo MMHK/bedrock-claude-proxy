@@ -16,6 +16,7 @@ type APIKeyStore interface {
 	GetAPIKey(email string) (string, error)
 	DeleteAPIKey(email string) error
 	HasAPIKey(email string) (bool, error)
+	GetDefaultExpiry() time.Duration
 	Close() error
 }
 
@@ -122,6 +123,10 @@ func (c *Cache) SaveAPIKey(email, apiKey string, expiry ...time.Duration) error 
 	}
 
 	return nil
+}
+
+func (c *Cache) GetDefaultExpiry() time.Duration {
+	return c.config.DefaultExpiry
 }
 
 // GetAPIKey retrieves an API key for the given email

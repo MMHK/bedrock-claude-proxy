@@ -93,6 +93,12 @@
             transition: background 0.2s;
         }
 
+        .api-key-container .btn {
+            border: 0;
+            width: 100%;
+            cursor: pointer;
+        }
+
         .btn:hover {
             background: var(--secondary-color);
         }
@@ -239,6 +245,8 @@
                     <strong>過期時間：</strong>
                     <div class="api-key-value" id="expiryTime"></div>
                 </div>
+                <!-- 新增重置 API Key 按钮 -->
+                <button class="btn" onclick="resetApiKey()">重置 API Key</button>
             </div>
         </section>
 
@@ -327,6 +335,36 @@
                 })
                 .catch(err => console.error('複製失敗：', err));
         }
+
+        function resetApiKey() {
+            const apiKey = document.getElementById('apiKeyText').textContent;
+            if (!apiKey) {
+                alert('請先取得 API Key');
+                return;
+            }
+
+            fetch('/auth/reset', {
+                method: 'POST',
+                headers: {
+                    'x-api-key': apiKey
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.api_key) {
+                    alert('API Key 已重置');
+                    document.getElementById('apiKeyText').textContent = data.api_key;
+                    document.getElementById('expiryTime').textContent = new Date(parseInt(data.expired_at) * 1000).toLocaleString();
+                } else {
+                    alert('重置失敗：' + data.error?.message || '未知錯誤');
+                }
+            })
+            .catch(error => {
+                console.error('重置 API Key 失敗：', error);
+                alert('重置失敗：' + error.message);
+            });
+        }
+
     </script>
 </body>
 </html>

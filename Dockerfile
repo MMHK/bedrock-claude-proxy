@@ -39,8 +39,8 @@ ENV HTTP_LISTEN=0.0.0.0:3000 \
  API_KEY= \
  AWS_BEDROCK_ACCESS_KEY= \
  AWS_BEDROCK_SECRET_KEY= \
- AWS_BEDROCK_REGION= \
- AWS_BEDROCK_MODEL_MAPPINGS="claude-3-5-sonnet-20240620=anthropic.claude-3-5-sonnet-20240620-v1:0,claude-3-5-sonnet-latest=anthropic.claude-3-5-sonnet-20241022-v2:0,claude-3-5-haiku-20241022=anthropic.claude-3-5-haiku-20241022-v1:0" \
+ AWS_BEDROCK_REGION=us-west-2 \
+ AWS_BEDROCK_MODEL_MAPPINGS="claude-3-5-sonnet-20240620=anthropic.claude-3-5-sonnet-20240620-v1:0,claude-3-5-sonnet-latest=anthropic.claude-3-5-sonnet-20241022-v2:0,claude-3-5-sonnet-20241022=anthropic.claude-3-5-sonnet-20241022-v2:0,claude-3-5-haiku-20241022=anthropic.claude-3-5-haiku-20241022-v1:0" \
  AWS_BEDROCK_ANTHROPIC_VERSION_MAPPINGS="2023-06-01=bedrock-2023-05-31" \
  AWS_BEDROCK_ANTHROPIC_DEFAULT_MODEL="anthropic.claude-3-5-haiku-20241022-v1:0" \
  AWS_BEDROCK_ANTHROPIC_DEFAULT_VERSION=bedrock-2023-05-31 \
@@ -48,6 +48,14 @@ ENV HTTP_LISTEN=0.0.0.0:3000 \
  AWS_BEDROCK_REASON_BUDGET_TOKENS=1024 \
  AWS_BEDROCK_ENABLE_COMPUTER_USE=false \
  AWS_BEDROCK_DEBUG=false \
+ CACHE_DB_PATH=/app/cache.db \
+ CACHE_BUCKET_NAME=bedrock-claude-proxy-cache \
+ CACHE_DEFAULT_EXPIRY_HOURS=720 \
+ ZOHO_ALLOW_DOMAINS= \
+ ZOHO_CLIENT_ID= \
+ ZOHO_CLIENT_SECRET= \
+ ZOHO_REDIRECT_URI= \
+ ZOHO_ALLOW_DOMAINS= \
  LOG_LEVEL=INFO
 
 EXPOSE 3000

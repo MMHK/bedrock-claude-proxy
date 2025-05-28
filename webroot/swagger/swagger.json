@@ -218,6 +218,74 @@
           }
         }
       }
+    },
+    "/auth/reset": {
+      "post": {
+        "summary": "Reset API Key",
+        "description": "Resets the user's API Key using the old API Key",
+        "operationId": "resetApiKey",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successfully reset API key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "api_key": {
+                      "type": "string",
+                      "description": "Newly generated API key for the user"
+                    },
+                    "email": {
+                      "type": "string",
+                      "description": "User's email address"
+                    },
+                    "expired_at": {
+                      "type": "integer",
+                      "description": "Timestamp when the API key will expire"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - missing or invalid old API key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing API key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {

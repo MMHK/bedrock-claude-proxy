@@ -78,6 +78,12 @@ type APIStandardError struct {
 	Error *APIError `json:"error,omitempty"`
 }
 
+type ExistApiKey struct {
+	APIKey    string `json:"api_key"`
+	Email     string `json:"email"`
+	ExpiredAt int64  `json:"expired_at,omitempty"`
+}
+
 func NewHttpService(conf *Config) *HTTPService {
 	bedrock := NewBedrockClient(conf.BedrockConfig)
 	zohoConfig := LoadZohoConfigFromEnv()
@@ -138,12 +144,6 @@ func (this *HTTPService) HandleAuthCallback(writer http.ResponseWriter, request 
 		return
 	}
 
-	type ExistApiKey struct {
-		APIKey    string `json:"api_key"`
-		Email     string `json:"email"`
-		ExpiredAt int64  `json:"expired_at,omitempty"`
-	}
-
 	emailExist, err := this.ApiStorage.HasAPIKey(email)
 	if err == nil && emailExist {
 		apiKeyJSON, err := this.ApiStorage.GetAPIKey(email)
@@ -167,7 +167,7 @@ func (this *HTTPService) HandleAuthCallback(writer http.ResponseWriter, request 
 	apiKey := this.generateAPIKey()
 
 	this.apiKeysMutex.Lock()
-	err = this.ApiStorage.SaveAPIKey(apiKey, email, 24*time.Hour)
+	err = this.ApiStorage.SaveAPIKey(apiKey, email)
 	if err != nil {
 		this.ResponseError(fmt.Errorf("failed to save API key: %v", err), writer)
 		return
@@ -175,13 +175,13 @@ func (this *HTTPService) HandleAuthCallback(writer http.ResponseWriter, request 
 	keyRecordsBin, err := json.Marshal(ExistApiKey{
 		APIKey:    apiKey,
 		Email:     email,
-		ExpiredAt: time.Now().Add(24 * time.Hour).Unix(),
+		ExpiredAt: time.Now().Add(this.ApiStorage.GetDefaultExpiry()).Unix(),
 	})
 	if err != nil {
 		this.ResponseError(fmt.Errorf("failed to marshal API key record: %v", err), writer)
 		return
 	}
-	err = this.ApiStorage.SaveAPIKey(email, string(keyRecordsBin), 24*time.Hour)
+	err = this.ApiStorage.SaveAPIKey(email, string(keyRecordsBin))
 	if err != nil {
 		this.ResponseError(fmt.Errorf("failed to save API key: %v", err), writer)
 		return
@@ -191,7 +191,7 @@ func (this *HTTPService) HandleAuthCallback(writer http.ResponseWriter, request 
 	response := ExistApiKey{
 		APIKey:    apiKey,
 		Email:     email,
-		ExpiredAt: time.Now().Add(24 * time.Hour).Unix(),
+		ExpiredAt: time.Now().Add(this.ApiStorage.GetDefaultExpiry()).Unix(),
 	}
 
 	this.ResponseJSON(response, writer)
@@ -280,6 +280,60 @@ func (this *HTTPService) APIKeyMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// HandleResetAPIKey 处理重置 API Key 的回调函数
+func (this *HTTPService) HandleResetAPIKey(writer http.ResponseWriter, request *http.Request) {
+	// 获取请求中的旧 API Key
+	oldAPIKey := request.Header.Get("x-api-key")
+	if oldAPIKey == "" {
+		this.ResponseError(fmt.Errorf("missing old API key"), writer)
+		return
+	}
+
+	email, err := this.ApiStorage.GetAPIKey(oldAPIKey)
+	 if err != nil || len(email) <= 0 {
+		this.ResponseError(fmt.Errorf("APIkey: %v not found", err), writer)
+		return
+	}
+
+	err = this.ApiStorage.DeleteAPIKey(oldAPIKey)
+	if err != nil {
+		this.ResponseError(fmt.Errorf("failed to delete API key: %v", err), writer)
+		return
+	}
+
+	// 调用 ResetAPIKey 函数重置新的 API Key
+	newAPIKey := this.generateAPIKey()
+	this.apiKeysMutex.Lock()
+	err = this.ApiStorage.SaveAPIKey(newAPIKey, email)
+	if err != nil {
+		this.ResponseError(fmt.Errorf("failed to save API key: %v", err), writer)
+		return
+	}
+	keyRecordsBin, err := json.Marshal(ExistApiKey{
+		APIKey:    newAPIKey,
+		Email:     email,
+		ExpiredAt: time.Now().Add(this.ApiStorage.GetDefaultExpiry()).Unix(),
+	})
+	if err != nil {
+		this.ResponseError(fmt.Errorf("failed to marshal API key record: %v", err), writer)
+		return
+	}
+	err = this.ApiStorage.SaveAPIKey(email, string(keyRecordsBin))
+	if err != nil {
+		this.ResponseError(fmt.Errorf("failed to save API key: %v", err), writer)
+		return
+	}
+	this.apiKeysMutex.Unlock();
+
+	// 返回新的 API Key
+	response := ExistApiKey{
+		APIKey:    newAPIKey,
+		Email:     email, // 邮箱信息可选，根据需求决定是否返回
+		ExpiredAt: time.Now().Add(this.ApiStorage.GetDefaultExpiry()).Unix(),
+	}
+	this.ResponseJSON(response, writer)
+}
+
 func (this *HTTPService) Start() {
 	rHandler := mux.NewRouter()
 
@@ -288,6 +342,9 @@ func (this *HTTPService) Start() {
 	// Add auth routes
 	rHandler.HandleFunc("/auth", this.HandleAuth)
 	rHandler.HandleFunc("/auth/callback", this.HandleAuthCallback)
+
+	// 新增重置 API Key 的路由
+	rHandler.HandleFunc("/auth/reset", this.HandleResetAPIKey).Methods("POST")
 
 	// 需要 API Key 的路由
 	apiRouter := rHandler.PathPrefix("/v1").Subrouter()

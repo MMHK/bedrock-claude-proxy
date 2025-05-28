@@ -2,6 +2,8 @@ package pkg
 
 import (
 	"fmt"
+	"os"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -16,11 +18,23 @@ type MemoryStore struct {
 
 // NewMemoryStore creates a new memory-based API key store
 func NewMemoryStore(defaultExpiry time.Duration) *MemoryStore {
-	return &MemoryStore{
+
+	target := &MemoryStore{
 		data:          make(map[string]*APIKeyEntry),
 		expiry:        make(map[string]time.Time),
 		defaultExpiry: defaultExpiry,
 	}
+
+	defaultExpiryStr := os.Getenv("CACHE_DEFAULT_EXPIRY_HOURS")
+	if len(defaultExpiryStr) > 0 {
+		defaultExpiry, err := strconv.Atoi(defaultExpiryStr)
+		if err == nil {
+			target.defaultExpiry = time.Duration(defaultExpiry) * time.Hour
+		}
+	}
+
+
+	return target
 }
 
 func (m *MemoryStore) SaveAPIKey(email, apiKey string, expiry ...time.Duration) error {
@@ -40,6 +54,10 @@ func (m *MemoryStore) SaveAPIKey(email, apiKey string, expiry ...time.Duration) 
 	m.data[email] = entry
 	m.expiry[email] = time.Now().Add(expiryDuration)
 	return nil
+}
+
+func (c *MemoryStore) GetDefaultExpiry() time.Duration {
+	return c.defaultExpiry
 }
 
 func (m *MemoryStore) GetAPIKey(email string) (string, error) {
